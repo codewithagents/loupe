@@ -1,0 +1,14 @@
+{
+  "name": "loupe",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Interactive HTML feedback loop for Claude Code agents",
+  "main": "assets/cli.js",
+  "bin": {
+    "loupe": "assets/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/loop.test.js"
+  },
+  "license": "MIT"
+}
