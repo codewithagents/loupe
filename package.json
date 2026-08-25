@@ -1,5 +1,5 @@
 {
-  "name": "loupe",
+  "name": "@codewithagents/loupe",
   "version": "1.0.0",
   "type": "module",
   "description": "Interactive HTML feedback loop for Claude Code agents",
@@ -10,5 +10,10 @@
   "scripts": {
     "test": "node --test test/loop.test.js"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://github.com/codewithagents/loupe",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codewithagents/loupe.git"
+  }
 }
