@@ -2,7 +2,6 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { injectScript } from './html-inject.js';
 import { renderShell } from './shell.js';
@@ -14,6 +13,9 @@ import {
   takePrompts,
   restorePrompts,
   appendPrompts,
+  appendReply,
+  resolveThread,
+  getHistory,
   emitFeedback,
   onFeedback,
   offFeedback,
@@ -51,8 +53,10 @@ function parseBody(req) {
 }
 
 function normalizePrompt(p) {
+  const uid = p.uid ?? crypto.randomUUID();
   return {
-    uid: p.uid ?? crypto.randomUUID(),
+    uid,
+    threadId: p.threadId ?? uid,
     prompt: p.prompt ?? '',
     selector: p.selector ?? null,
     tag: p.tag ?? 'note',
@@ -189,6 +193,16 @@ export function createServer(port) {
         return;
       }
 
+      // GET /api/:key/history
+      const historyMatch = pathname.match(/^\/api\/([a-f0-9]{16})\/history$/);
+      if (method === 'GET' && historyMatch) {
+        const key = historyMatch[1];
+        const history = getHistory(key);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ history }));
+        return;
+      }
+
       // GET /api/poll?file=ABS[&timeout=SEC]
       if (method === 'GET' && pathname === '/api/poll') {
         const filePath = url.searchParams.get('file');
@@ -229,7 +243,7 @@ export function createServer(port) {
           res.end(JSON.stringify({
             session: sessionData,
             prompts,
-            next_step: 'Address the annotations, then run poll again (optionally with --reply) to continue.',
+            next_step: 'Address the annotations, then run poll again (optionally with --reply-to <uid> "text") to continue.',
           }));
         };
 
@@ -293,8 +307,13 @@ export function createServer(port) {
       if (method === 'POST' && replyMatch) {
         const key = replyMatch[1];
         const body = await parseBody(req);
+        const replyUid = crypto.randomUUID();
+        const targetUid = body.targetUid || null;
+        const threadId = targetUid ? resolveThread(key, targetUid) : null;
+        const payload = { uid: replyUid, text: body.text || '', targetUid, threadId };
+        await appendReply(key, { uid: replyUid, threadId, text: body.text || '' });
         for (const [conn, connKey] of sseConnections) {
-          if (connKey === key) sendSSE(conn, 'agent-reply', { text: body.text || '' });
+          if (connKey === key) sendSSE(conn, 'agent-reply', payload);
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));

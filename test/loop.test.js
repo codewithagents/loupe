@@ -46,15 +46,13 @@ test('POST /api/sessions returns key and url', async () => {
   assert.ok(data.url.includes(data.key));
 
   await unlink(filePath);
-  return data.key;
 });
 
-test('full poll loop: prompts are delivered and normalized', async () => {
+test('full poll loop: prompts are delivered and normalized with threadId', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-loop-'));
   const filePath = path.join(tmpDir, 'artifact.html');
   await writeFile(filePath, '<html><body><p>Hello</p></body></html>');
 
-  // Create session
   const sessR = await fetch(`${BASE}/api/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -62,58 +60,47 @@ test('full poll loop: prompts are delivered and normalized', async () => {
   });
   const { key } = await sessR.json();
 
-  // Start poll (don't await yet)
   const pollPromise = fetch(`${BASE}/api/poll?file=${encodeURIComponent(filePath)}&timeout=5`);
-
-  // Give the poll a moment to register
   await new Promise(r => setTimeout(r, 100));
 
-  // Post a prompt with extra fields that should be stripped
   const postR = await fetch(`${BASE}/api/${key}/prompts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompts: [{
         uid: 'test-uid-001',
+        threadId: 'test-uid-001',
         prompt: 'This looks wrong',
         selector: 'p',
         tag: 'note',
         text: 'Hello',
         target: null,
         extraField: 'should be stripped',
-        another: 123,
       }],
     }),
   });
   assert.equal(postR.status, 200);
 
-  // Await poll result
   const pollR = await pollPromise;
-  const pollText = await pollR.text();
-  const result = JSON.parse(pollText.trim());
+  const result = JSON.parse((await pollR.text()).trim());
 
   assert.ok(result.prompts, 'prompts array should be present');
   assert.equal(result.prompts.length, 1);
 
   const p = result.prompts[0];
-
-  // Verify correct fields are present
   assert.equal(p.uid, 'test-uid-001');
+  assert.equal(p.threadId, 'test-uid-001');
   assert.equal(p.prompt, 'This looks wrong');
   assert.equal(p.selector, 'p');
   assert.equal(p.tag, 'note');
   assert.equal(p.text, 'Hello');
   assert.equal(p.target, null);
-
-  // Verify extra fields are stripped
   assert.equal(p.extraField, undefined);
-  assert.equal(p.another, undefined);
 
-  // Verify exactly 6 fields
-  const keys = Object.keys(p);
-  assert.deepEqual(keys.sort(), ['prompt', 'selector', 'tag', 'target', 'text', 'uid'].sort());
+  const keys = Object.keys(p).sort();
+  assert.deepEqual(keys, ['prompt', 'selector', 'tag', 'target', 'text', 'threadId', 'uid'].sort());
 
-  assert.ok(result.next_step, 'next_step hint should be present');
+  assert.ok(result.next_step);
 
   await unlink(filePath);
 });
@@ -138,26 +125,74 @@ test('batch poll: multiple prompts returned in a single poll response', async ()
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompts: [
-        { uid: 'batch-001', prompt: 'First note', selector: 'p', tag: 'note', text: null, target: null },
-        { uid: 'batch-002', prompt: 'Second note', selector: null, tag: 'note', text: 'some text', target: null },
-        { uid: 'batch-003', prompt: 'Third note', selector: 'h1', tag: 'note', text: null, target: null },
+        { uid: 'batch-001', threadId: 'batch-001', prompt: 'First note', selector: 'p', tag: 'note', text: null, target: null },
+        { uid: 'batch-002', threadId: 'batch-002', prompt: 'Second note', selector: null, tag: 'note', text: 'some text', target: null },
+        { uid: 'batch-003', threadId: 'batch-001', prompt: 'Follow-up', selector: 'p', tag: 'note', text: null, target: null },
       ],
     }),
   });
 
-  const pollR = await pollPromise;
-  const result = JSON.parse((await pollR.text()).trim());
-
+  const result = JSON.parse((await (await pollPromise).text()).trim());
   assert.ok(Array.isArray(result.prompts));
-  assert.equal(result.prompts.length, 3, 'all three prompts should arrive in one poll response');
+  assert.equal(result.prompts.length, 3, 'all three prompts arrive in one poll response');
   assert.equal(result.prompts[0].uid, 'batch-001');
   assert.equal(result.prompts[1].uid, 'batch-002');
-  assert.equal(result.prompts[2].uid, 'batch-003');
+  assert.equal(result.prompts[2].threadId, 'batch-001', 'follow-up shares threadId with parent');
 
   await unlink(filePath);
 });
 
-test('watcher: detects file change after atomic inode replacement (write-temp-rename)', async (t) => {
+test('history endpoint: returns sent prompts and agent replies', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-hist-'));
+  const filePath = path.join(tmpDir, 'artifact.html');
+  await writeFile(filePath, '<html><body><p>History test</p></body></html>');
+
+  const sessR = await fetch(`${BASE}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: filePath }),
+  });
+  const { key } = await sessR.json();
+
+  // Post a prompt
+  await fetch(`${BASE}/api/${key}/prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompts: [{ uid: 'hist-001', threadId: 'hist-001', prompt: 'Check this', selector: 'p', tag: 'note', text: null, target: null }] }),
+  });
+
+  // Drain the poll so prompts are "consumed" but history persists
+  await fetch(`${BASE}/api/poll?file=${encodeURIComponent(filePath)}&timeout=1`);
+
+  // Post an agent reply targeted at the prompt
+  await fetch(`${BASE}/api/${key}/agent-reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Looks good to me', targetUid: 'hist-001' }),
+  });
+
+  // Fetch history
+  const histR = await fetch(`${BASE}/api/${key}/history`);
+  assert.equal(histR.status, 200);
+  const histData = await histR.json();
+  assert.ok(Array.isArray(histData.history));
+
+  const userEntries = histData.history.filter(h => h.role === 'user');
+  const agentEntries = histData.history.filter(h => h.role === 'agent');
+
+  assert.equal(userEntries.length, 1);
+  assert.equal(userEntries[0].uid, 'hist-001');
+  assert.equal(userEntries[0].threadId, 'hist-001');
+  assert.equal(userEntries[0].prompt, 'Check this');
+
+  assert.equal(agentEntries.length, 1);
+  assert.equal(agentEntries[0].text, 'Looks good to me');
+  assert.equal(agentEntries[0].threadId, 'hist-001', 'agent reply should carry threadId resolved from targetUid');
+
+  await unlink(filePath);
+});
+
+test('watcher: detects file change after atomic inode replacement (write-temp-rename)', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-watch-'));
   const filePath = path.join(tmpDir, 'watched.html');
   await writeFile(filePath, '<html><body>v1</body></html>');
@@ -165,20 +200,17 @@ test('watcher: detects file change after atomic inode replacement (write-temp-re
   let reloadCount = 0;
   const stop = watchFile(filePath, () => { reloadCount++; });
 
-  // Give watcher time to start
   await new Promise(r => setTimeout(r, 100));
 
-  // Atomic save: write to a temp file then rename (simulates editor behaviour)
   const tmpFile = filePath + '.tmp';
   await writeFile(tmpFile, '<html><body>v2</body></html>');
   await rename(tmpFile, filePath);
 
-  // Wait for debounce + stability check (150ms debounce + 3*60ms stability + buffer)
   await new Promise(r => setTimeout(r, 700));
 
   stop();
 
-  assert.ok(reloadCount >= 1, 'reload should have fired at least once after atomic rename, got: ' + reloadCount);
+  assert.ok(reloadCount >= 1, 'reload should fire at least once after atomic rename, got: ' + reloadCount);
 
   await unlink(filePath);
 });

@@ -112,28 +112,49 @@ async function cmdOpen(args) {
 }
 
 async function cmdPoll(args) {
-  const replyIdx = args.indexOf('--reply');
-  const timeoutIdx = args.indexOf('--timeout');
+  // Parse args:
+  //   --reply-to <uid> <text>   (repeatable) targeted reply to a specific annotation
+  //   --reply <text>            broadcast reply (legacy, no targetUid)
+  //   --timeout <sec>
+  //   <file>
+  const replyTos = [];
+  let replyText = null;
+  let timeoutSec = 0;
+  const fileArgs = [];
 
-  const replyText = replyIdx !== -1 ? args[replyIdx + 1] : null;
-  const timeoutSec = timeoutIdx !== -1 ? parseInt(args[timeoutIdx + 1] || '0', 10) : 0;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--reply-to' && i + 2 < args.length) {
+      replyTos.push({ uid: args[i + 1], text: args[i + 2] });
+      i += 2;
+    } else if (args[i] === '--reply' && i + 1 < args.length) {
+      replyText = args[i + 1];
+      i += 1;
+    } else if (args[i] === '--timeout' && i + 1 < args.length) {
+      timeoutSec = parseInt(args[i + 1] || '0', 10);
+      i += 1;
+    } else {
+      fileArgs.push(args[i]);
+    }
+  }
 
-  const fileArgs = args.filter((a, i) => {
-    if (a === '--reply' || a === '--timeout') return false;
-    if (i > 0 && (args[i - 1] === '--reply' || args[i - 1] === '--timeout')) return false;
-    return true;
-  });
   const filePath = fileArgs[0];
-
   if (!filePath) {
-    console.error('Usage: node cli.js poll <file> [--reply "text"] [--timeout <sec>]');
+    console.error('Usage: node cli.js poll <file> [--reply-to <uid> "text"] [--reply "text"] [--timeout <sec>]');
     process.exit(1);
   }
   const absPath = path.resolve(filePath);
   await ensureServer();
+  const key = keyFromPath(absPath);
+
+  for (const { uid, text } of replyTos) {
+    await fetch(`${BASE}/api/${key}/agent-reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, targetUid: uid }),
+    });
+  }
 
   if (replyText) {
-    const key = keyFromPath(absPath);
     await fetch(`${BASE}/api/${key}/agent-reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

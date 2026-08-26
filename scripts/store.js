@@ -1,15 +1,15 @@
 import { EventEmitter } from 'node:events';
 import { Mutex } from './mutex.js';
+import crypto from 'node:crypto';
 
 const sessions = new Map();
 const emitter = new EventEmitter();
 emitter.setMaxListeners(100);
-
 const mutex = new Mutex();
 
 export function getOrCreateSession(key, filePath) {
   if (!sessions.has(key)) {
-    sessions.set(key, { key, filePath, prompts: [] });
+    sessions.set(key, { key, filePath, prompts: [], history: [] });
   }
   return sessions.get(key);
 }
@@ -22,8 +22,7 @@ export async function takePrompts(key) {
   return mutex.run(() => {
     const session = sessions.get(key);
     if (!session) return [];
-    const taken = session.prompts.splice(0);
-    return taken;
+    return session.prompts.splice(0);
   });
 }
 
@@ -40,7 +39,44 @@ export async function appendPrompts(key, prompts) {
     const session = sessions.get(key);
     if (!session) return;
     session.prompts.push(...prompts);
+    for (const p of prompts) {
+      session.history.push({
+        role: 'user',
+        uid: p.uid,
+        threadId: p.threadId || p.uid,
+        prompt: p.prompt,
+        selector: p.selector,
+        tag: p.tag,
+        text: p.text,
+        target: p.target,
+      });
+    }
   });
+}
+
+export async function appendReply(key, reply) {
+  return mutex.run(() => {
+    const session = sessions.get(key);
+    if (!session) return;
+    session.history.push({
+      role: 'agent',
+      uid: reply.uid ?? crypto.randomUUID(),
+      threadId: reply.threadId ?? null,
+      text: reply.text,
+    });
+  });
+}
+
+export function resolveThread(key, promptUid) {
+  const session = sessions.get(key);
+  if (!session) return null;
+  const entry = session.history.find(h => h.role === 'user' && h.uid === promptUid);
+  return entry ? (entry.threadId || entry.uid) : null;
+}
+
+export function getHistory(key) {
+  const session = sessions.get(key);
+  return session ? [...session.history] : [];
 }
 
 export function emitFeedback(key) {
