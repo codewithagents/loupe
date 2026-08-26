@@ -19,6 +19,15 @@ test('setup: start server', async () => {
   });
 });
 
+test('GET /health includes version and fingerprint', async () => {
+  const r = await fetch(`${BASE}/health`);
+  assert.equal(r.status, 200);
+  const data = await r.json();
+  assert.ok(typeof data.version === 'string' && data.version.length > 0, 'version present');
+  assert.ok(typeof data.fingerprint === 'string' && data.fingerprint.length === 16, 'fingerprint is 16-char hex');
+  assert.match(data.fingerprint, /^[a-f0-9]{16}$/, 'fingerprint is lowercase hex');
+});
+
 test('key derivation: same path produces same key, different path produces different key', () => {
   const p1 = '/some/absolute/path/file.html';
   const p2 = '/another/path/file.html';

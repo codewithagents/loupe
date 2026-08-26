@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 
@@ -20,6 +20,17 @@ async function getPackageVersion() {
     return pkg.version || '1.0.0';
   } catch {
     return '1.0.0';
+  }
+}
+
+async function computeFingerprint() {
+  try {
+    const files = (await readdir(__dirname)).filter(f => f.endsWith('.js')).sort();
+    const h = crypto.createHash('sha256');
+    for (const f of files) h.update(await readFile(path.join(__dirname, f)));
+    return h.digest('hex').slice(0, 16);
+  } catch {
+    return '';
   }
 }
 
@@ -63,11 +74,13 @@ function spawnServer() {
 }
 
 async function ensureServer() {
-  const ourVersion = await getPackageVersion();
+  const [ourVersion, ourFingerprint] = await Promise.all([getPackageVersion(), computeFingerprint()]);
   const health = await healthCheck();
 
   if (health) {
-    if (health.version && health.version !== ourVersion) {
+    const versionStale = health.version && health.version !== ourVersion;
+    const codeStale = !health.fingerprint || health.fingerprint !== ourFingerprint;
+    if (versionStale || codeStale) {
       try {
         await fetch(`${BASE}/shutdown`, { method: 'POST', signal: AbortSignal.timeout(1500) });
       } catch { /* ignore */ }

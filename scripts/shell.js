@@ -1,4 +1,5 @@
-export function renderShell(key, port) {
+export function renderShell(key, port, version) {
+  version = version || '?';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -62,7 +63,7 @@ export function renderShell(key, port) {
 </head>
 <body>
 <div id="toolbar">
-  <span id="toolbar-title">Loupe</span>
+  <span id="toolbar-title">Loupe v${version}</span>
   <span id="toolbar-info">Session: ${key}</span>
 </div>
 <div id="main">

@@ -29,6 +29,15 @@ try {
   packageVersion = pkg.version || packageVersion;
 } catch { /* ignore */ }
 
+// Fingerprint all scripts/*.js files so cli can detect code changes without a version bump
+let serverFingerprint = '';
+try {
+  const files = (await fs.readdir(__dirname)).filter(f => f.endsWith('.js')).sort();
+  const h = crypto.createHash('sha256');
+  for (const f of files) h.update(await fs.readFile(path.join(__dirname, f)));
+  serverFingerprint = h.digest('hex').slice(0, 16);
+} catch { /* ignore */ }
+
 export function keyFromPath(absPath) {
   return crypto.createHash('sha256').update(absPath).digest('hex').slice(0, 16);
 }
@@ -82,7 +91,7 @@ export function createServer(port) {
       // GET /health
       if (method === 'GET' && pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ version: packageVersion, pid: process.pid }));
+        res.end(JSON.stringify({ version: packageVersion, fingerprint: serverFingerprint, pid: process.pid }));
         return;
       }
 
@@ -120,7 +129,7 @@ export function createServer(port) {
       if (method === 'GET' && sessionMatch) {
         const key = sessionMatch[1];
         res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(renderShell(key, port));
+        res.end(renderShell(key, port, packageVersion));
         return;
       }
 
