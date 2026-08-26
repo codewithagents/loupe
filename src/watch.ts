@@ -41,6 +41,7 @@ export function watchFile(absPath: string, onReload: () => void): () => void {
           scheduleCheck();
         }
       });
+      watcher.unref();
       watcher.on('error', () => {
         if (!stopped) {
           watcher?.close();

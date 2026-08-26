@@ -1,8 +1,15 @@
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM"],
-    "noEmit": true
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "declaration": false,
+    "sourceMap": false,
+    "types": []
   },
-  "include": ["src/client-sdk.ts", "src/shell.ts"]
+  "include": ["src/browser"]
 }

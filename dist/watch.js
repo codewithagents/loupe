@@ -39,6 +39,7 @@ export function watchFile(absPath, onReload) {
                     scheduleCheck();
                 }
             });
+            watcher.unref();
             watcher.on('error', () => {
                 if (!stopped) {
                     watcher?.close();

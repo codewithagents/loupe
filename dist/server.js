@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { injectScript } from './html-inject.js';
 import { renderShell } from './shell.js';
 import { watchFile } from './watch.js';
-import { clientSdkSource } from './client-sdk.js';
 import { getOrCreateSession, getSession, takePrompts, restorePrompts, appendPrompts, appendReply, resolveThread, getHistory, toggleDone, emitFeedback, onFeedback, offFeedback, } from './store.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let packageVersion = '1.0.0';
@@ -17,12 +16,26 @@ try {
     packageVersion = pkg.version ?? packageVersion;
 }
 catch { /* ignore */ }
+const browserDir = path.join(__dirname, 'browser');
+let clientSdkSource = '';
+let shellScriptSource = '';
+try {
+    clientSdkSource = await fs.readFile(path.join(browserDir, 'client-sdk.js'), 'utf8');
+    shellScriptSource = await fs.readFile(path.join(browserDir, 'shell-script.js'), 'utf8');
+}
+catch { /* ignore - browser build may not exist */ }
 let serverFingerprint = '';
 try {
     const files = (await fs.readdir(__dirname)).filter(f => f.endsWith('.js')).sort();
     const h = crypto.createHash('sha256');
     for (const f of files)
         h.update(await fs.readFile(path.join(__dirname, f)));
+    try {
+        const browserFiles = (await fs.readdir(browserDir)).filter(f => f.endsWith('.js')).sort();
+        for (const f of browserFiles)
+            h.update(await fs.readFile(path.join(browserDir, f)));
+    }
+    catch { /* browser dir may not exist */ }
     serverFingerprint = h.digest('hex').slice(0, 16);
 }
 catch { /* ignore */ }
@@ -152,7 +165,7 @@ export function createServer(port) {
                 if (!session)
                     return notFound(res);
                 const html = await fs.readFile(session.filePath, 'utf8');
-                const injected = injectScript(html, `<script src="/sdk.js?key=${key}"></script>`);
+                const injected = injectScript(html, `<script type="module" src="/sdk.js?key=${key}"></script>`);
                 res.writeHead(200, { 'Content-Type': 'text/html' });
                 res.end(injected);
                 return;
@@ -161,6 +174,12 @@ export function createServer(port) {
             if (method === 'GET' && pathname === '/sdk.js') {
                 res.writeHead(200, { 'Content-Type': 'application/javascript' });
                 res.end(clientSdkSource);
+                return;
+            }
+            // GET /shell-script.js
+            if (method === 'GET' && pathname === '/shell-script.js') {
+                res.writeHead(200, { 'Content-Type': 'application/javascript' });
+                res.end(shellScriptSource);
                 return;
             }
             // GET /events/:key

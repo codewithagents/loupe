@@ -26,6 +26,13 @@ async function computeFingerprint() {
         const h = crypto.createHash('sha256');
         for (const f of files)
             h.update(await readFile(path.join(__dirname, f)));
+        const browserDir = path.join(__dirname, 'browser');
+        try {
+            const browserFiles = (await readdir(browserDir)).filter(f => f.endsWith('.js')).sort();
+            for (const f of browserFiles)
+                h.update(await readFile(path.join(browserDir, f)));
+        }
+        catch { /* browser dir may not exist */ }
         return h.digest('hex').slice(0, 16);
     }
     catch {
@@ -183,3 +190,4 @@ else {
     console.error('Usage: node cli.js <open|poll> [args...]');
     process.exit(1);
 }
+process.exit(0);
