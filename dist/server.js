@@ -68,6 +68,34 @@ const sseConnections = new Map();
 const fileWatchers = new Map();
 const activePollCounts = new Map();
 const lastPresencePayload = new Map();
+// Light states: green = poll open (listening now), amber = working with
+// recent activity, grey = no poll and gone quiet (agent stopped/crashed).
+// amber reverts to grey if the agent sends no activity for WORKING_LIVENESS_MS.
+const WORKING_LIVENESS_MS = 120_000;
+const workingLivenessTimers = new Map();
+function clearLivenessTimer(key) {
+    const t = workingLivenessTimers.get(key);
+    if (t !== undefined) {
+        clearTimeout(t);
+        workingLivenessTimers.delete(key);
+    }
+}
+function startLivenessTimer(key) {
+    clearLivenessTimer(key);
+    const t = setTimeout(() => {
+        workingLivenessTimers.delete(key);
+        if (lastPresencePayload.get(key)?.state === 'working')
+            broadcastPresence(key, 'idle');
+    }, WORKING_LIVENESS_MS);
+    t.unref();
+    workingLivenessTimers.set(key, t);
+}
+// Call on proof of agent activity (reply sent, artifact edited) while
+// in working state. Resets the liveness grace period.
+function touchLiveness(key) {
+    if (lastPresencePayload.get(key)?.state === 'working')
+        startLivenessTimer(key);
+}
 function sendSSE(res, event, data) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
@@ -76,6 +104,10 @@ function broadcastPresence(key, state) {
         ? { state, workingSince: Date.now() }
         : { state };
     lastPresencePayload.set(key, payload);
+    if (state === 'working')
+        startLivenessTimer(key);
+    else
+        clearLivenessTimer(key);
     for (const [conn, connKey] of sseConnections) {
         if (connKey === key)
             sendSSE(conn, 'agent-presence', payload);
@@ -146,6 +178,7 @@ export function createServer(port) {
                             if (connKey === key)
                                 sendSSE(conn, 'reload', {});
                         }
+                        touchLiveness(key);
                     });
                     fileWatchers.set(key, stop);
                 }
@@ -392,6 +425,7 @@ export function createServer(port) {
                     if (connKey === key)
                         sendSSE(conn, 'agent-reply', payload);
                 }
+                touchLiveness(key);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ ok: true }));
                 return;

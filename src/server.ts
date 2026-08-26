@@ -91,6 +91,33 @@ const activePollCounts = new Map<string, number>();
 type PresencePayload = { state: 'polling' | 'working' | 'idle'; workingSince?: number };
 const lastPresencePayload = new Map<string, PresencePayload>();
 
+// Light states: green = poll open (listening now), amber = working with
+// recent activity, grey = no poll and gone quiet (agent stopped/crashed).
+// amber reverts to grey if the agent sends no activity for WORKING_LIVENESS_MS.
+const WORKING_LIVENESS_MS = 120_000;
+const workingLivenessTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearLivenessTimer(key: string): void {
+  const t = workingLivenessTimers.get(key);
+  if (t !== undefined) { clearTimeout(t); workingLivenessTimers.delete(key); }
+}
+
+function startLivenessTimer(key: string): void {
+  clearLivenessTimer(key);
+  const t = setTimeout(() => {
+    workingLivenessTimers.delete(key);
+    if (lastPresencePayload.get(key)?.state === 'working') broadcastPresence(key, 'idle');
+  }, WORKING_LIVENESS_MS);
+  t.unref();
+  workingLivenessTimers.set(key, t);
+}
+
+// Call on proof of agent activity (reply sent, artifact edited) while
+// in working state. Resets the liveness grace period.
+function touchLiveness(key: string): void {
+  if (lastPresencePayload.get(key)?.state === 'working') startLivenessTimer(key);
+}
+
 function sendSSE(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
@@ -100,6 +127,7 @@ function broadcastPresence(key: string, state: 'polling' | 'working' | 'idle'): 
     ? { state, workingSince: Date.now() }
     : { state };
   lastPresencePayload.set(key, payload);
+  if (state === 'working') startLivenessTimer(key); else clearLivenessTimer(key);
   for (const [conn, connKey] of sseConnections) {
     if (connKey === key) sendSSE(conn, 'agent-presence', payload);
   }
@@ -173,6 +201,7 @@ export function createServer(port: number): http.Server {
             for (const [conn, connKey] of sseConnections) {
               if (connKey === key) sendSSE(conn, 'reload', {});
             }
+            touchLiveness(key);
           });
           fileWatchers.set(key, stop);
         }
@@ -439,6 +468,7 @@ export function createServer(port: number): http.Server {
         for (const [conn, connKey] of sseConnections) {
           if (connKey === key) sendSSE(conn, 'agent-reply', payload);
         }
+        touchLiveness(key);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true }));
         return;

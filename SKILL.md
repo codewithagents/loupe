@@ -83,6 +83,48 @@ node ${CLAUDE_SKILL_DIR}/dist/cli.js poll /absolute/path/to/file.html --timeout 
 
 Returns after 60 seconds even if no feedback was submitted (prompts array will be empty).
 
+## Agent loop
+
+Keep polling until the user explicitly says the review is done. Stopping early turns the browser light grey and makes it impossible for the user to send further feedback.
+
+### Run poll in the background
+
+Start `poll` in the background so your turn is not blocked for the full wait. In Claude Code use `run_in_background: true` in your Bash tool call. You will be notified when feedback arrives and can then process the output.
+
+### Multiple threads may arrive together
+
+In Instant mode the user can send several annotations while you are working; they queue on the server and arrive together in the next poll response. The `prompts` array may contain entries for more than one `threadId`. Handle all of them:
+
+1. For each `threadId`, read the prompt and apply the requested change to the HTML file.
+2. Send all replies and re-poll in a single invocation:
+
+```
+node ${CLAUDE_SKILL_DIR}/dist/cli.js poll /path/to/file.html \
+  --reply-to <threadId1> "Done, reduced the heading size." \
+  --reply-to <threadId2> "Done, changed the button colour."
+```
+
+This sends the replies first, then waits for the next round.
+
+### Re-poll immediately after every round
+
+After applying changes and replying, re-poll right away (background again). Never break the loop voluntarily. A typical round looks like:
+
+1. Background poll returns with one or more threads.
+2. Edit the HTML file for each thread.
+3. Re-poll with `--reply-to` for each thread (the file save triggers a browser reload automatically).
+4. Go to step 1.
+
+### What the user sees (status light in the top bar)
+
+| Colour | Meaning |
+|---|---|
+| Green | A poll is open - you are listening; feedback arrives immediately. |
+| Amber | You picked up the last batch and are working on it. |
+| Grey | No poll open - you have stopped or are between polls. |
+
+The light turns amber the moment poll delivers feedback, and green again as soon as you re-poll. Keep that gap short. If amber persists for more than ~2 minutes with no file edits or replies, the server assumes you stopped and turns the light grey automatically.
+
 ## Notes
 
 - `open` and `poll` both work by hashing the absolute file path to find the session. Use the same path consistently.
