@@ -59,7 +59,7 @@ Each prompt carries a stable `uid` and a `threadId` (the thread it belongs to). 
 
 ### 3. Reply to specific threads and wait again
 
-Use `--reply-to <uid> "text"` to send a reply that appears inside the correct annotation thread in the browser. Repeat the flag to reply to multiple threads in one invocation:
+Use `--reply-to <threadId> "text"` to send a reply that appears inside the correct annotation thread in the browser. The `threadId` is the value from the poll response (for a new thread it equals the `uid` of the first prompt). Repeat the flag to reply to multiple threads in one invocation:
 
 ```
 node ${CLAUDE_SKILL_DIR}/scripts/cli.js poll /absolute/path/to/file.html \

@@ -61,16 +61,19 @@ export async function appendReply(key, reply) {
     session.history.push({
       role: 'agent',
       uid: reply.uid ?? crypto.randomUUID(),
-      threadId: reply.threadId ?? null,
+      // null threadId (broadcast) uses a stable sentinel so history restore works
+      threadId: reply.threadId ?? '__broadcast__',
       text: reply.text,
     });
   });
 }
 
-export function resolveThread(key, promptUid) {
+// Accept ref as either a threadId (preferred) or a prompt uid
+export function resolveThread(key, ref) {
   const session = sessions.get(key);
   if (!session) return null;
-  const entry = session.history.find(h => h.role === 'user' && h.uid === promptUid);
+  if (session.history.some(h => h.threadId === ref)) return ref;
+  const entry = session.history.find(h => h.role === 'user' && h.uid === ref);
   return entry ? (entry.threadId || entry.uid) : null;
 }
 

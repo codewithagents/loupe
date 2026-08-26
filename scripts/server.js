@@ -243,7 +243,7 @@ export function createServer(port) {
           res.end(JSON.stringify({
             session: sessionData,
             prompts,
-            next_step: 'Address the annotations, then run poll again (optionally with --reply-to <uid> "text") to continue.',
+            next_step: 'Address the annotations, then run poll again (optionally with --reply-to <threadId> "text") to continue.',
           }));
         };
 

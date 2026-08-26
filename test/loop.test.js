@@ -192,6 +192,73 @@ test('history endpoint: returns sent prompts and agent replies', async () => {
   await unlink(filePath);
 });
 
+test('resolveThread: --reply-to accepts threadId directly (not only prompt uid)', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-tid-'));
+  const filePath = path.join(tmpDir, 'artifact.html');
+  await writeFile(filePath, '<html><body><p>Thread test</p></body></html>');
+
+  const sessR = await fetch(`${BASE}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: filePath }),
+  });
+  const { key } = await sessR.json();
+
+  // Thread tid-a with a follow-up (follow-up uid != threadId)
+  await fetch(`${BASE}/api/${key}/prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompts: [
+        { uid: 'tid-a', threadId: 'tid-a', prompt: 'First note', selector: 'p', tag: 'note', text: null, target: null },
+        { uid: 'tid-a-followup', threadId: 'tid-a', prompt: 'Follow-up', selector: 'p', tag: 'note', text: null, target: null },
+      ],
+    }),
+  });
+
+  // Reply using the threadId directly (not a uid)
+  const replyR = await fetch(`${BASE}/api/${key}/agent-reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Got it', targetUid: 'tid-a' }),
+  });
+  assert.equal(replyR.status, 200);
+
+  const histData = await (await fetch(`${BASE}/api/${key}/history`)).json();
+  const agentEntries = histData.history.filter(h => h.role === 'agent');
+  assert.equal(agentEntries.length, 1);
+  assert.equal(agentEntries[0].threadId, 'tid-a', 'threadId resolved correctly when passing threadId as ref');
+
+  await unlink(filePath);
+});
+
+test('broadcast reply: stored with __broadcast__ threadId so history restore works', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-bc-'));
+  const filePath = path.join(tmpDir, 'artifact.html');
+  await writeFile(filePath, '<html><body><p>Broadcast test</p></body></html>');
+
+  const sessR = await fetch(`${BASE}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: filePath }),
+  });
+  const { key } = await sessR.json();
+
+  // Post a broadcast reply (no targetUid)
+  await fetch(`${BASE}/api/${key}/agent-reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'All changes applied.' }),
+  });
+
+  const histData = await (await fetch(`${BASE}/api/${key}/history`)).json();
+  const agentEntries = histData.history.filter(h => h.role === 'agent');
+  assert.equal(agentEntries.length, 1);
+  assert.equal(agentEntries[0].threadId, '__broadcast__', 'broadcast reply must use __broadcast__ sentinel so page-refresh restore works');
+
+  await unlink(filePath);
+});
+
 test('watcher: detects file change after atomic inode replacement (write-temp-rename)', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-watch-'));
   const filePath = path.join(tmpDir, 'watched.html');
