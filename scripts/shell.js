@@ -14,9 +14,17 @@ export function renderShell(key, port, version) {
   #toolbar-info { color: #94a3b8; font-size: 12px; }
   #toolbar-spacer { flex: 1; }
   #pending-count { font-size: 12px; color: #94a3b8; }
-  #send-btn { background: #3b82f6; color: white; border: none; border-radius: 4px; padding: 5px 14px; cursor: pointer; font-size: 12px; font-weight: 500; }
+  #send-btn { background: #3b82f6; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
   #send-btn:hover:not(:disabled) { background: #2563eb; }
   #send-btn:disabled { background: #334155; color: #64748b; cursor: default; }
+  #orphan-wrap { position: relative; }
+  #orphan-btn { background: #b45309; color: #fef3c7; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; display: none; }
+  #orphan-btn:hover { background: #92400e; }
+  #orphan-list { display: none; position: absolute; top: calc(100% + 6px); right: 0; background: #1e293b; border: 1px solid #334155; border-radius: 8px; min-width: 260px; max-height: 280px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 8000; }
+  .orphan-row { display: block; width: 100%; text-align: left; background: transparent; border: none; border-bottom: 1px solid #0f172a; padding: 9px 14px; cursor: pointer; color: #e2e8f0; font-size: 12px; }
+  .orphan-row:hover { background: #0f172a; }
+  .orphan-row-snippet { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orphan-row-sel { font-family: monospace; font-size: 10px; color: #64748b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #artifact-wrap { flex: 1; min-height: 0; }
   #artifact-frame { width: 100%; height: 100%; border: none; background: white; display: block; }
   #status-bar { padding: 3px 12px; font-size: 11px; color: #64748b; background: #0f172a; border-top: 1px solid #334155; flex-shrink: 0; }
@@ -24,20 +32,22 @@ export function renderShell(key, port, version) {
   /* Modal overlay */
   #modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9000; align-items: center; justify-content: center; }
   #modal-backdrop.open { display: flex; }
-  #modal { background: #1e293b; border: 1px solid #334155; border-radius: 12px; width: 500px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,0.6); overflow: hidden; }
+  #modal { background: #1e293b; border: 1px solid #334155; border-radius: 12px; width: 520px; max-width: calc(100vw - 32px); max-height: calc(100vh - 64px); display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,0.6); overflow: hidden; }
 
   /* Modal header */
-  #modal-hdr { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid #334155; flex-shrink: 0; }
-  #modal-hdr-text { flex: 1; min-width: 0; }
-  #modal-snippet { font-size: 14px; font-weight: 500; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #modal-sel { font-family: monospace; font-size: 11px; color: #f59e0b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #modal-hdr-btns { display: flex; gap: 6px; flex-shrink: 0; padding-top: 1px; }
-  .modal-btn { background: transparent; border: 1px solid #334155; border-radius: 4px; color: #94a3b8; width: 28px; height: 28px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
-  .modal-btn:hover { background: #0f172a; color: #e2e8f0; }
+  #modal-hdr { padding: 16px 16px 12px; border-bottom: 1px solid #334155; flex-shrink: 0; }
+  #modal-orphan-warning { display: none; background: #451a03; border: 1px solid #92400e; border-radius: 5px; padding: 6px 10px; margin-bottom: 10px; font-size: 12px; color: #fbbf24; }
+  #modal-snippet { font-size: 17px; font-weight: 700; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+  #modal-sel { font-family: monospace; font-size: 11px; color: #f59e0b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 10px; }
+  #modal-hdr-actions { display: flex; gap: 8px; align-items: center; }
+  #modal-done-btn { background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  #modal-done-btn:hover { background: #475569; }
   #modal-done-btn.done { background: #4b5563; color: #9ca3af; border-color: #6b7280; }
+  #modal-close-btn { background: transparent; color: #94a3b8; border: 1px solid #334155; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 12px; white-space: nowrap; margin-left: auto; }
+  #modal-close-btn:hover { background: #0f172a; color: #e2e8f0; }
 
   /* Modal messages */
-  #modal-msgs { overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; min-height: 80px; max-height: 45vh; }
+  #modal-msgs { overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; min-height: 80px; max-height: 40vh; }
   #modal-empty { color: #475569; font-size: 13px; text-align: center; padding: 20px 0; }
   .msg { border-radius: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.5; }
   .msg-user { background: #0f172a; border: 1px solid #334155; }
@@ -59,8 +69,12 @@ export function renderShell(key, port, version) {
   <span id="toolbar-title">Loupe v${version}</span>
   <span id="toolbar-info">Session: ${key}</span>
   <span id="toolbar-spacer"></span>
+  <span id="orphan-wrap">
+    <button id="orphan-btn">&#x26A0; Orphaned (0)</button>
+    <div id="orphan-list"></div>
+  </span>
   <span id="pending-count">0 pending</span>
-  <button id="send-btn" disabled>Send</button>
+  <button id="send-btn" disabled>Send (&#x2318;&#x21B5;)</button>
 </div>
 <div id="artifact-wrap">
   <iframe id="artifact-frame"></iframe>
@@ -69,19 +83,18 @@ export function renderShell(key, port, version) {
 <div id="modal-backdrop">
   <div id="modal">
     <div id="modal-hdr">
-      <div id="modal-hdr-text">
-        <div id="modal-snippet"></div>
-        <div id="modal-sel"></div>
-      </div>
-      <div id="modal-hdr-btns">
-        <button id="modal-done-btn" class="modal-btn" title="Mark as done">&#x2713;</button>
-        <button id="modal-close-btn" class="modal-btn" title="Close">&#x2715;</button>
+      <div id="modal-orphan-warning">&#x26A0; Anchor lost - the element this referred to changed or was removed</div>
+      <div id="modal-snippet"></div>
+      <div id="modal-sel"></div>
+      <div id="modal-hdr-actions">
+        <button id="modal-done-btn">Resolve (&#x2318;D)</button>
+        <button id="modal-close-btn">Close (Esc)</button>
       </div>
     </div>
     <div id="modal-msgs"></div>
     <div id="modal-compose">
       <textarea id="modal-input" placeholder="Continue the thread&#x2026;"></textarea>
-      <div id="modal-hint">Enter: add note &middot; Shift+Enter: newline &middot; Cmd+Enter: add &amp; send all &middot; Esc: close</div>
+      <div id="modal-hint">Enter: add note &middot; Shift+Enter: newline &middot; &#x2318;/Ctrl+Enter: add &amp; send all &middot; Esc: close</div>
     </div>
   </div>
 </div>
@@ -102,7 +115,10 @@ export function renderShell(key, port, version) {
   var sendBtn = document.getElementById('send-btn');
   var statusBar = document.getElementById('status-bar');
   var artifactFrame = document.getElementById('artifact-frame');
+  var orphanBtn = document.getElementById('orphan-btn');
+  var orphanList = document.getElementById('orphan-list');
   var modalBackdrop = document.getElementById('modal-backdrop');
+  var modalOrphanWarning = document.getElementById('modal-orphan-warning');
   var modalSnippet = document.getElementById('modal-snippet');
   var modalSel = document.getElementById('modal-sel');
   var modalMsgs = document.getElementById('modal-msgs');
@@ -130,6 +146,49 @@ export function renderShell(key, port, version) {
     sendBtn.disabled = n === 0;
   }
 
+  /* ---- orphan badge ---- */
+  function updateOrphanBadge() {
+    var orphaned = [];
+    for (var tid in threads) {
+      if (threads[tid].orphaned) orphaned.push(tid);
+    }
+    if (orphaned.length === 0) {
+      orphanBtn.style.display = 'none';
+      orphanList.style.display = 'none';
+      return;
+    }
+    orphanBtn.style.display = '';
+    orphanBtn.textContent = '⚠ Orphaned (' + orphaned.length + ')';
+
+    orphanList.innerHTML = '';
+    for (var i = 0; i < orphaned.length; i++) {
+      var t = threads[orphaned[i]];
+      var row = document.createElement('button');
+      row.className = 'orphan-row';
+      var snippetEl = document.createElement('div');
+      snippetEl.className = 'orphan-row-snippet';
+      snippetEl.textContent = t.contentSnippet || t.selector || 'General note';
+      row.appendChild(snippetEl);
+      var selEl = document.createElement('div');
+      selEl.className = 'orphan-row-sel';
+      selEl.textContent = t.selector || '';
+      row.appendChild(selEl);
+      (function(threadId) {
+        row.addEventListener('click', function() {
+          orphanList.style.display = 'none';
+          openModal(threadId);
+        });
+      })(orphaned[i]);
+      orphanList.appendChild(row);
+    }
+  }
+
+  orphanBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    orphanList.style.display = orphanList.style.display === 'none' ? 'block' : 'none';
+  });
+  document.addEventListener('click', function() { orphanList.style.display = 'none'; });
+
   /* ---- marker state (4 states) ---- */
   function markerState(t) {
     if (t.done) return 'done';
@@ -142,7 +201,7 @@ export function renderShell(key, port, version) {
   /* ---- markers ---- */
   function applyMarker(tid) {
     var t = threads[tid];
-    if (!t || !t.selector) return;
+    if (!t || !t.selector || t.orphaned) return;
     if (!artifactReady) return;
     var count = t.messages.length + t.drafts.length;
     try {
@@ -158,6 +217,22 @@ export function renderShell(key, port, version) {
 
   function applyAllMarkers() {
     for (var tid in threads) applyMarker(tid);
+    checkAllAnchors();
+  }
+
+  /* ---- anchor checking (re-resolves after each iframe reload) ---- */
+  function checkAllAnchors() {
+    var toCheck = [];
+    for (var tid in threads) {
+      var t = threads[tid];
+      if (t.selector || t.contentSnippet) {
+        toCheck.push({ threadId: tid, selector: t.selector || null, contentSnippet: t.contentSnippet || null });
+      }
+    }
+    if (toCheck.length === 0) return;
+    try {
+      artifactFrame.contentWindow.postMessage({ type: 'loupe:check-anchors', threads: toCheck }, '*');
+    } catch(e) {}
   }
 
   /* ---- localStorage drafts ---- */
@@ -178,7 +253,7 @@ export function renderShell(key, port, version) {
       for (var i = 0; i < stored.length; i++) {
         var d = stored[i];
         if (!threads[d.threadId]) {
-          threads[d.threadId] = { threadId: d.threadId, selector: d.selector || null, selText: d.selText || null, contentSnippet: d.contentSnippet || null, messages: [], drafts: [], done: false };
+          threads[d.threadId] = { threadId: d.threadId, selector: d.selector || null, selText: d.selText || null, contentSnippet: d.contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
         }
         threads[d.threadId].drafts.push({ uid: d.uid, prompt: d.prompt });
       }
@@ -191,7 +266,7 @@ export function renderShell(key, port, version) {
       var item = history[i];
       var tid = item.threadId || item.uid;
       if (!threads[tid]) {
-        threads[tid] = { threadId: tid, selector: item.selector || null, selText: item.text || null, contentSnippet: item.contentSnippet || null, messages: [], drafts: [], done: false };
+        threads[tid] = { threadId: tid, selector: item.selector || null, selText: item.text || null, contentSnippet: item.contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
       } else if (!threads[tid].contentSnippet && item.contentSnippet) {
         threads[tid].contentSnippet = item.contentSnippet;
       }
@@ -214,10 +289,11 @@ export function renderShell(key, port, version) {
     var t = threads[tid];
     if (!t) return;
 
+    modalOrphanWarning.style.display = t.orphaned ? 'block' : 'none';
     modalSnippet.textContent = t.contentSnippet || t.selector || 'General note';
-    modalSel.textContent = t.selector || (t.selText ? '“' + t.selText.slice(0, 50) + '”' : '');
+    modalSel.textContent = t.selector || (t.selText ? '"' + t.selText.slice(0, 50) + '"' : '');
     modalDoneBtn.classList.toggle('done', !!t.done);
-    modalDoneBtn.title = t.done ? 'Mark as open' : 'Mark as done';
+    modalDoneBtn.textContent = t.done ? 'Reopen (⌘D)' : 'Resolve (⌘D)';
 
     modalMsgs.innerHTML = '';
 
@@ -287,7 +363,12 @@ export function renderShell(key, port, version) {
   modalCloseBtn.addEventListener('click', closeModal);
   modalBackdrop.addEventListener('click', function(e) { if (e.target === modalBackdrop) closeModal(); });
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && modalBackdrop.classList.contains('open')) closeModal();
+    var isModal = modalBackdrop.classList.contains('open');
+    if (e.key === 'Escape' && isModal) { closeModal(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'd' && isModal) {
+      e.preventDefault();
+      if (activeThreadId && threads[activeThreadId]) modalDoneBtn.click();
+    }
   });
 
   /* ---- modal compose ---- */
@@ -329,13 +410,13 @@ export function renderShell(key, port, version) {
         if (!threads[targetTid].contentSnippet && contentSnippet) threads[targetTid].contentSnippet = contentSnippet;
       } else {
         targetTid = uid();
-        threads[targetTid] = { threadId: targetTid, selector: selector, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false };
+        threads[targetTid] = { threadId: targetTid, selector: selector, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
       }
       pendingCtx = null;
       activeThreadId = targetTid;
     } else {
       targetTid = uid();
-      threads[targetTid] = { threadId: targetTid, selector: null, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false };
+      threads[targetTid] = { threadId: targetTid, selector: null, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
       activeThreadId = targetTid;
       pendingCtx = null;
     }
@@ -404,6 +485,22 @@ export function renderShell(key, port, version) {
       sendBtn.click();
     } else if (d.type === 'loupe:marker-click') {
       openModal(d.threadId);
+    } else if (d.type === 'loupe:anchor-report') {
+      for (var i = 0; i < d.results.length; i++) {
+        var r = d.results[i];
+        var t = threads[r.threadId];
+        if (!t) continue;
+        var wasOrphaned = t.orphaned;
+        t.orphaned = !!r.orphaned;
+        if (!r.orphaned) {
+          if (r.selector && r.selector !== t.selector) t.selector = r.selector;
+          if (wasOrphaned) applyMarker(r.threadId);
+        } else {
+          try { artifactFrame.contentWindow.postMessage({ type: 'loupe:remove-marker', threadId: r.threadId }, '*'); } catch(ex) {}
+        }
+      }
+      updateOrphanBadge();
+      if (activeThreadId && modalBackdrop.classList.contains('open')) renderModal(activeThreadId);
     }
   });
 
@@ -430,7 +527,7 @@ export function renderShell(key, port, version) {
       } else {
         var btid = '__broadcast__';
         if (!threads[btid]) {
-          threads[btid] = { threadId: btid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false };
+          threads[btid] = { threadId: btid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false, orphaned: false };
         }
         threads[btid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
         if (activeThreadId === btid && modalBackdrop.classList.contains('open')) renderModal(btid);

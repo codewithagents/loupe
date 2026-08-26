@@ -1,7 +1,9 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { injectScript } from './html-inject.js';
 import { renderShell } from './shell.js';
@@ -41,6 +43,28 @@ try {
 
 export function keyFromPath(absPath) {
   return crypto.createHash('sha256').update(absPath).digest('hex').slice(0, 16);
+}
+
+function stateFilePath(key) {
+  return path.join(os.tmpdir(), 'loupe-state-' + key + '.json');
+}
+
+function loadSessionState(key) {
+  try {
+    const p = stateFilePath(key);
+    if (existsSync(p)) {
+      const data = JSON.parse(readFileSync(p, 'utf8'));
+      return Array.isArray(data.doneThreadIds) ? data.doneThreadIds : [];
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveSessionState(key) {
+  try {
+    const data = getHistory(key);
+    if (data) writeFileSync(stateFilePath(key), JSON.stringify({ doneThreadIds: data.doneThreadIds }));
+  } catch { /* ignore */ }
 }
 
 const sseConnections = new Map();
@@ -110,7 +134,7 @@ export function createServer(port) {
         const body = await parseBody(req);
         const filePath = path.resolve(body.file || '');
         const key = keyFromPath(filePath);
-        getOrCreateSession(key, filePath);
+        getOrCreateSession(key, filePath, loadSessionState(key));
 
         if (!fileWatchers.has(key)) {
           const stop = watchFile(filePath, () => {
@@ -221,6 +245,7 @@ export function createServer(port) {
         const [, key, threadId] = doneMatch;
         const result = await toggleDone(key, decodeURIComponent(threadId));
         if (!result) return notFound(res);
+        saveSessionState(key);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
         return;

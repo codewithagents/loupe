@@ -243,8 +243,41 @@ export const clientSdkSource = `(function() {
     } else if (d.type === 'loupe:clear-markers') {
       for (var tid in markers) { markers[tid].el.remove(); }
       markers = {};
+    } else if (d.type === 'loupe:remove-marker') {
+      if (markers[d.threadId]) { markers[d.threadId].el.remove(); delete markers[d.threadId]; }
+    } else if (d.type === 'loupe:check-anchors') {
+      var results = [];
+      for (var ai = 0; ai < d.threads.length; ai++) {
+        results.push(checkAnchor(d.threads[ai].threadId, d.threads[ai].selector, d.threads[ai].contentSnippet));
+      }
+      window.parent.postMessage({ type: 'loupe:anchor-report', results: results }, '*');
     }
   });
+
+  function checkAnchor(threadId, selector, contentSnippet) {
+    if (selector && document.querySelector(selector)) {
+      return { threadId: threadId, selector: selector, orphaned: false };
+    }
+    if (contentSnippet) {
+      var snippet = contentSnippet.replace(/…$/, '');
+      var found = null;
+      var ambiguous = false;
+      var all = document.body ? document.body.querySelectorAll('*') : [];
+      for (var i = 0; i < all.length; i++) {
+        var node = all[i];
+        if (isLoupeEl(node)) continue;
+        var text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text === snippet || (contentSnippet.slice(-1) === '…' && text.startsWith(snippet))) {
+          if (found) { ambiguous = true; break; }
+          found = node;
+        }
+      }
+      if (found && !ambiguous) {
+        return { threadId: threadId, selector: buildSelector(found), orphaned: false, reanchored: true };
+      }
+    }
+    return { threadId: threadId, selector: null, orphaned: true };
+  }
 
   /* ---- hover ---- */
   document.addEventListener('mouseover', function(e) {

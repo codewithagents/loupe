@@ -7,9 +7,9 @@ const emitter = new EventEmitter();
 emitter.setMaxListeners(100);
 const mutex = new Mutex();
 
-export function getOrCreateSession(key, filePath) {
+export function getOrCreateSession(key, filePath, doneThreadIds = []) {
   if (!sessions.has(key)) {
-    sessions.set(key, { key, filePath, prompts: [], history: [], doneThreads: new Set() });
+    sessions.set(key, { key, filePath, prompts: [], history: [], doneThreads: new Set(doneThreadIds) });
   }
   return sessions.get(key);
 }
