@@ -1,5 +1,6 @@
 {
   "name": "codewithagents",
+  "description": "The CodeWithAgents plugin marketplace: developer tools and skills that extend local coding agents.",
   "owner": {
     "name": "CodeWithAgents",
     "url": "https://github.com/codewithagents"
