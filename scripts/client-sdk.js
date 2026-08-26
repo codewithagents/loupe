@@ -69,7 +69,7 @@ export const clientSdkSource = `(function() {
   function updateMarkerStyle(el, count, pending) {
     el.style.background = pending ? '#f59e0b' : '#3b82f6';
     el.style.color = pending ? '#000' : '#fff';
-    el.textContent = String(count || 1);
+    el.textContent = String(count);
   }
 
   function positionMarker(el, selector) {

@@ -104,6 +104,7 @@ export function renderShell(key, port, version) {
 
   var threads = {};
   var activeThreadId = null;
+  var pendingCtx = null; // transient selected-element context; thread only created when note is added
   var reloadCounter = 0;
   var artifactReady = false;
 
@@ -126,8 +127,6 @@ export function renderShell(key, port, version) {
   }
 
   /* ---- thread helpers ---- */
-  function getThread(tid) { return threads[tid] || null; }
-
   function totalDrafts() {
     var n = 0;
     for (var tid in threads) n += threads[tid].drafts.length;
@@ -232,7 +231,10 @@ export function renderShell(key, port, version) {
       row.appendChild(label);
 
       (function(threadId) {
-        row.addEventListener('click', function() { setActiveThread(threadId); });
+        row.addEventListener('click', function() {
+          pendingCtx = null;
+          setActiveThread(threadId);
+        });
       })(tid);
 
       threadList.appendChild(row);
@@ -244,6 +246,12 @@ export function renderShell(key, port, version) {
   }
 
   function renderThreadDetail() {
+    if (pendingCtx) {
+      var pendingLabel = pendingCtx.selector || (pendingCtx.selText ? '"' + pendingCtx.selText.slice(0, 40) + '"' : 'New general note');
+      tdHeader.textContent = pendingLabel;
+      tdMessages.innerHTML = '<div id="td-empty">Type your note below and click Add note</div>';
+      return;
+    }
     if (!activeThreadId || !threads[activeThreadId]) {
       tdHeader.textContent = 'Select an element to annotate';
       tdMessages.innerHTML = '<div id="td-empty">Click an element in the page or select a thread above</div>';
@@ -293,11 +301,22 @@ export function renderShell(key, port, version) {
     renderThreadDetail();
   }
 
-  function createThread(selector, selText) {
+  // Show a transient "ready to annotate" state without creating a thread yet
+  function selectPending(selector, selText) {
+    pendingCtx = { selector: selector || null, selText: selText || null };
+    activeThreadId = null;
+    renderThreadList();
+    renderThreadDetail();
+    setTimeout(function() { tdInput.focus(); }, 0);
+  }
+
+  // Called when user actually adds a note: turns pendingCtx into a real thread
+  function materializeThread() {
+    if (!pendingCtx) return null;
     var tid = uid();
-    threads[tid] = { threadId: tid, selector: selector || null, selText: selText || null, messages: [], drafts: [] };
-    setActiveThread(tid);
-    applyMarker(tid);
+    threads[tid] = { threadId: tid, selector: pendingCtx.selector, selText: pendingCtx.selText, messages: [], drafts: [] };
+    pendingCtx = null;
+    activeThreadId = tid;
     return tid;
   }
 
@@ -358,8 +377,10 @@ export function renderShell(key, port, version) {
   tdAddBtn.addEventListener('click', function() {
     var text = tdInput.value.trim();
     if (!text) return;
-    if (!activeThreadId || !threads[activeThreadId]) return;
-    addDraft(activeThreadId, text);
+    // Materialize a pending context into a real thread if needed
+    var targetTid = pendingCtx ? materializeThread() : activeThreadId;
+    if (!targetTid || !threads[targetTid]) return;
+    addDraft(targetTid, text);
     tdInput.value = '';
   });
 
@@ -369,8 +390,7 @@ export function renderShell(key, port, version) {
 
   /* ---- general note ---- */
   addGeneralBtn.addEventListener('click', function() {
-    var tid = createThread(null, null);
-    tdInput.focus();
+    selectPending(null, null);
   });
 
   /* ---- postMessage from artifact ---- */
@@ -380,16 +400,19 @@ export function renderShell(key, port, version) {
     if (d.type === 'loupe:element') {
       var existing = findThreadBySelector(d.selector);
       if (existing) {
+        pendingCtx = null;
         setActiveThread(existing);
+        // Defer focus: cross-frame postMessage callback may not get trusted-gesture status
+        setTimeout(function() { tdInput.focus(); }, 0);
       } else {
-        createThread(d.selector, null);
-        tdInput.focus();
+        selectPending(d.selector, null);
       }
     } else if (d.type === 'loupe:selection') {
-      createThread(null, d.text);
-      tdInput.focus();
+      selectPending(null, d.text);
     } else if (d.type === 'loupe:marker-click') {
+      pendingCtx = null;
       setActiveThread(d.threadId);
+      setTimeout(function() { tdInput.focus(); }, 0);
     }
   });
 
