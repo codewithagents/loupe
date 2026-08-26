@@ -6,7 +6,10 @@ export const clientSdkSource = `(function() {
     return m || '';
   })();
 
-  var overlay = null;
+  var hoverOv = null;    // amber transient outline
+  var selOv = null;      // blue sticky outline (persists while compose is open)
+  var selectedEl = null; // element currently selected
+  var composeBox = null; // inline compose div (null when hidden)
   var markerContainer = null;
   var markers = {};
 
@@ -41,6 +44,13 @@ export const clientSdkSource = `(function() {
     return { top: r.top, left: r.left, width: r.width, height: r.height };
   }
 
+  function isLoupeEl(el) {
+    if (markerContainer && markerContainer.contains(el)) return true;
+    if (composeBox && composeBox.contains(el)) return true;
+    return false;
+  }
+
+  /* ---- markers ---- */
   function getMarkerContainer() {
     if (!markerContainer) {
       markerContainer = document.createElement('div');
@@ -59,6 +69,7 @@ export const clientSdkSource = `(function() {
     el.addEventListener('click', function(e) {
       e.stopPropagation();
       e.preventDefault();
+      closeCompose();
       window.parent.postMessage({ type: 'loupe:marker-click', threadId: threadId }, '*');
     });
     el.addEventListener('mouseenter', function() { el.style.transform = 'scale(1.2)'; });
@@ -83,14 +94,115 @@ export const clientSdkSource = `(function() {
     el.style.left = Math.max(0, r.right - 11) + 'px';
   }
 
-  function tickMarkers() {
+  /* ---- overlays ---- */
+  function placeOv(ov, el) {
+    var r = el.getBoundingClientRect();
+    ov.style.top = r.top + 'px';
+    ov.style.left = r.left + 'px';
+    ov.style.width = r.width + 'px';
+    ov.style.height = r.height + 'px';
+  }
+
+  function ensureHoverOv() {
+    if (!hoverOv) {
+      hoverOv = document.createElement('div');
+      hoverOv.style.cssText = 'position:fixed;pointer-events:none;border:2px solid rgba(245,158,11,0.6);border-radius:2px;box-sizing:border-box;z-index:2147483645;transition:all 0.08s;display:none;';
+      document.body.appendChild(hoverOv);
+    }
+    return hoverOv;
+  }
+
+  function showSelOv(el) {
+    if (!selOv) {
+      selOv = document.createElement('div');
+      selOv.style.cssText = 'position:fixed;pointer-events:none;border:2px solid #3b82f6;border-radius:2px;box-sizing:border-box;z-index:2147483646;box-shadow:0 0 0 3px rgba(59,130,246,0.2);display:none;';
+      document.body.appendChild(selOv);
+    }
+    placeOv(selOv, el);
+    selOv.style.display = 'block';
+  }
+
+  /* ---- inline compose ---- */
+  function openCompose(el, selector) {
+    if (composeBox) { composeBox.remove(); composeBox = null; }
+
+    var r = el.getBoundingClientRect();
+    var mg = 8;
+    var bw = 240;
+    var bh = 118;
+    var left = r.left;
+    var top = r.bottom + mg;
+    if (left + bw > window.innerWidth - mg) left = window.innerWidth - bw - mg;
+    if (left < mg) left = mg;
+    if (top + bh > window.innerHeight - mg) top = r.top - bh - mg;
+    if (top < mg) top = mg;
+
+    var box = document.createElement('div');
+    box.setAttribute('data-loupe-compose', '1');
+    box.style.cssText = 'position:fixed;z-index:2147483001;background:#1e293b;border:1.5px solid #3b82f6;border-radius:8px;padding:8px;width:240px;box-shadow:0 4px 20px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:5px;left:' + left + 'px;top:' + top + 'px;';
+
+    var lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:10px;color:#94a3b8;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    lbl.textContent = selector || 'element';
+    box.appendChild(lbl);
+
+    var ta = document.createElement('textarea');
+    ta.style.cssText = 'background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:6px;font-size:12px;resize:none;height:56px;outline:none;font-family:system-ui,sans-serif;width:100%;box-sizing:border-box;line-height:1.4;';
+    ta.placeholder = 'Type note, Enter to add...';
+    box.appendChild(ta);
+
+    var hint = document.createElement('div');
+    hint.style.cssText = 'font-size:10px;color:#475569;line-height:1.3;';
+    hint.textContent = 'Enter: add  Shift+Enter: newline  Cmd+Enter: add & send all  Esc: cancel';
+    box.appendChild(hint);
+
+    ta.addEventListener('keydown', function(e) {
+      e.stopPropagation();
+      var isMeta = e.metaKey || e.ctrlKey;
+      if (e.key === 'Enter' && !e.shiftKey && !isMeta) {
+        e.preventDefault();
+        var text = ta.value.trim();
+        if (text) window.parent.postMessage({ type: 'loupe:note', selector: selector, text: text }, '*');
+        closeCompose();
+      } else if (e.key === 'Enter' && !e.shiftKey && isMeta) {
+        e.preventDefault();
+        var text2 = ta.value.trim();
+        if (text2) window.parent.postMessage({ type: 'loupe:note', selector: selector, text: text2 }, '*');
+        closeCompose();
+        window.parent.postMessage({ type: 'loupe:send-all' }, '*');
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeCompose();
+      }
+    });
+
+    document.body.appendChild(box);
+    composeBox = box;
+    ta.focus();
+  }
+
+  function closeCompose() {
+    if (composeBox) { composeBox.remove(); composeBox = null; }
+    if (selOv) selOv.style.display = 'none';
+    selectedEl = null;
+  }
+
+  /* ---- rAF tick: reposition markers and sticky overlay ---- */
+  function tick() {
     for (var tid in markers) {
       positionMarker(markers[tid].el, markers[tid].selector);
     }
-    requestAnimationFrame(tickMarkers);
+    if (selectedEl && selOv && selOv.style.display !== 'none') {
+      placeOv(selOv, selectedEl);
+    }
+    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tickMarkers);
+  requestAnimationFrame(tick);
 
+  /* ---- scroll closes compose ---- */
+  window.addEventListener('scroll', function() { if (composeBox) closeCompose(); }, true);
+
+  /* ---- postMessage from parent ---- */
   window.addEventListener('message', function(e) {
     if (!e.data || typeof e.data !== 'object') return;
     var d = e.data;
@@ -110,46 +222,41 @@ export const clientSdkSource = `(function() {
     }
   });
 
-  function showOverlay(el) {
-    if (!overlay) {
-      overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;pointer-events:none;border:2px solid #f59e0b;border-radius:2px;box-sizing:border-box;z-index:2147483646;transition:all 0.08s';
-      document.body.appendChild(overlay);
-    }
-    var r = el.getBoundingClientRect();
-    overlay.style.top = r.top + 'px';
-    overlay.style.left = r.left + 'px';
-    overlay.style.width = r.width + 'px';
-    overlay.style.height = r.height + 'px';
-    overlay.style.display = 'block';
-  }
-
-  function hideOverlay() {
-    if (overlay) overlay.style.display = 'none';
-  }
-
-  function isLoupeEl(el) {
-    return markerContainer && markerContainer.contains(el);
-  }
-
+  /* ---- hover ---- */
   document.addEventListener('mouseover', function(e) {
     if (isLoupeEl(e.target)) return;
-    showOverlay(e.target);
+    if (selectedEl) return;
+    var ov = ensureHoverOv();
+    placeOv(ov, e.target);
+    ov.style.display = 'block';
   });
 
   document.addEventListener('mouseout', function(e) {
     if (isLoupeEl(e.target)) return;
-    hideOverlay();
+    if (!selectedEl && hoverOv) hoverOv.style.display = 'none';
   });
 
+  /* ---- click (capture) ---- */
   document.addEventListener('click', function(e) {
     if (isLoupeEl(e.target)) return;
-    var selector = buildSelector(e.target);
-    window.parent.postMessage({ type: 'loupe:element', selector: selector, rect: rectOf(e.target) }, '*');
+
+    if (e.target === document.body || e.target === document.documentElement) {
+      closeCompose();
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
+
+    var selector = buildSelector(e.target);
+    selectedEl = e.target;
+    if (hoverOv) hoverOv.style.display = 'none';
+    showSelOv(e.target);
+    openCompose(e.target, selector);
+    window.parent.postMessage({ type: 'loupe:element', selector: selector, rect: rectOf(e.target) }, '*');
   }, true);
 
+  /* ---- text selection ---- */
   document.addEventListener('mouseup', function() {
     var sel = window.getSelection();
     if (sel && sel.toString().trim()) {

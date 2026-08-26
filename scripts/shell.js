@@ -307,7 +307,6 @@ export function renderShell(key, port, version) {
     activeThreadId = null;
     renderThreadList();
     renderThreadDetail();
-    setTimeout(function() { tdInput.focus(); }, 0);
   }
 
   // Called when user actually adds a note: turns pendingCtx into a real thread
@@ -325,6 +324,32 @@ export function renderShell(key, port, version) {
       if (threads[tid].selector === selector) return tid;
     }
     return null;
+  }
+
+  // Create or find a thread for a note committed via the in-iframe inline compose box
+  function addNoteFromIframe(selector, noteText) {
+    var targetTid;
+    if (selector) {
+      var existing = findThreadBySelector(selector);
+      if (existing) {
+        targetTid = existing;
+      } else {
+        targetTid = uid();
+        threads[targetTid] = { threadId: targetTid, selector: selector, selText: null, messages: [], drafts: [] };
+      }
+      pendingCtx = null;
+      activeThreadId = targetTid;
+    } else if (pendingCtx) {
+      targetTid = materializeThread();
+    } else if (activeThreadId && threads[activeThreadId]) {
+      targetTid = activeThreadId;
+    } else {
+      targetTid = uid();
+      threads[targetTid] = { threadId: targetTid, selector: null, selText: null, messages: [], drafts: [] };
+      activeThreadId = targetTid;
+      pendingCtx = null;
+    }
+    if (targetTid && threads[targetTid]) addDraft(targetTid, noteText);
   }
 
   /* ---- add draft ---- */
@@ -385,12 +410,14 @@ export function renderShell(key, port, version) {
   });
 
   tdInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); tdAddBtn.click(); }
+    if (e.key === 'Enter' && !e.shiftKey && !(e.metaKey || e.ctrlKey)) { e.preventDefault(); tdAddBtn.click(); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendBtn.click(); }
   });
 
   /* ---- general note ---- */
   addGeneralBtn.addEventListener('click', function() {
     selectPending(null, null);
+    tdInput.focus(); // same-frame click, focus is reliable here
   });
 
   /* ---- postMessage from artifact ---- */
@@ -402,8 +429,6 @@ export function renderShell(key, port, version) {
       if (existing) {
         pendingCtx = null;
         setActiveThread(existing);
-        // Defer focus: cross-frame postMessage callback may not get trusted-gesture status
-        setTimeout(function() { tdInput.focus(); }, 0);
       } else {
         selectPending(d.selector, null);
       }
@@ -412,7 +437,10 @@ export function renderShell(key, port, version) {
     } else if (d.type === 'loupe:marker-click') {
       pendingCtx = null;
       setActiveThread(d.threadId);
-      setTimeout(function() { tdInput.focus(); }, 0);
+    } else if (d.type === 'loupe:note') {
+      if (d.text) addNoteFromIframe(d.selector || null, d.text);
+    } else if (d.type === 'loupe:send-all') {
+      sendBtn.click();
     }
   });
 
