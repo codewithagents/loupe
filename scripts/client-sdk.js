@@ -85,7 +85,7 @@ export const clientSdkSource = `(function() {
   function updateMarkerStyle(el, count, state) {
     if (state === 'done') {
       el.style.background = '#4b5563';
-      el.style.color = '#9ca3af';
+      el.style.color = '#22c55e';
       el.style.border = '2px solid rgba(0,0,0,0.1)';
       el.textContent = '✓';
     } else if (state === 'agent-last') {
@@ -182,6 +182,7 @@ export const clientSdkSource = `(function() {
 
     ta.addEventListener('keydown', function(e) {
       e.stopPropagation();
+      if (e.key === 'Enter' && e.shiftKey) return;
       var isMeta = e.metaKey || e.ctrlKey;
       if (e.key === 'Enter' && !e.shiftKey && !isMeta) {
         e.preventDefault();

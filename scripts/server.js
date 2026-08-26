@@ -69,6 +69,13 @@ function saveSessionState(key) {
 
 const sseConnections = new Map();
 const fileWatchers = new Map();
+const activePollCounts = new Map();
+
+function broadcastPresence(key, state) {
+  for (const [conn, connKey] of sseConnections) {
+    if (connKey === key) sendSSE(conn, 'agent-presence', { state });
+  }
+}
 
 function sendSSE(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -298,17 +305,23 @@ export function createServer(port) {
         const existing = await takePrompts(key);
 
         if (existing.length > 0) {
+          broadcastPresence(key, 'working');
           await respond(existing);
           return;
         }
 
         let timeoutHandle = null;
+        let pollRegistered = false;
 
         const feedbackListener = async () => {
           if (responding) return;
           const prompts = await takePrompts(key);
 
           if (closed || res.writableEnded) {
+            if (pollRegistered) {
+              activePollCounts.set(key, Math.max(0, (activePollCounts.get(key) || 1) - 1));
+              pollRegistered = false;
+            }
             if (prompts.length > 0) {
               await restorePrompts(key, prompts);
               emitFeedback(key);
@@ -318,18 +331,31 @@ export function createServer(port) {
 
           if (prompts.length > 0) {
             if (timeoutHandle) clearTimeout(timeoutHandle);
+            if (pollRegistered) {
+              activePollCounts.set(key, Math.max(0, (activePollCounts.get(key) || 1) - 1));
+              pollRegistered = false;
+            }
+            broadcastPresence(key, 'working');
             await respond(prompts);
           } else {
             onFeedback(key, feedbackListener);
           }
         };
 
+        const newCount = (activePollCounts.get(key) || 0) + 1;
+        activePollCounts.set(key, newCount);
+        pollRegistered = true;
+        broadcastPresence(key, 'waiting');
         onFeedback(key, feedbackListener);
 
         if (timeoutSec > 0) {
           timeoutHandle = setTimeout(async () => {
             offFeedback(key, feedbackListener);
             if (!responding) {
+              if (pollRegistered) {
+                activePollCounts.set(key, Math.max(0, (activePollCounts.get(key) || 1) - 1));
+                pollRegistered = false;
+              }
               await respond([]);
             }
           }, timeoutSec * 1000);
@@ -339,6 +365,10 @@ export function createServer(port) {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           offFeedback(key, feedbackListener);
           if (!responding) {
+            if (pollRegistered) {
+              activePollCounts.set(key, Math.max(0, (activePollCounts.get(key) || 1) - 1));
+              pollRegistered = false;
+            }
             const prompts = await takePrompts(key);
             if (prompts.length > 0) {
               await restorePrompts(key, prompts);

@@ -12,11 +12,12 @@ export function renderShell(key, port, version) {
   #toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #1e293b; border-bottom: 1px solid #334155; font-size: 13px; flex-shrink: 0; }
   #toolbar-title { font-weight: 600; color: #f8fafc; }
   #toolbar-info { color: #94a3b8; font-size: 12px; }
+  #mode-toggle { display: flex; border: 1px solid #334155; border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+  .mode-btn { background: transparent; color: #64748b; border: none; padding: 3px 10px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .mode-btn:hover { color: #e2e8f0; }
+  .mode-btn.active { background: #334155; color: #e2e8f0; }
   #toolbar-spacer { flex: 1; }
-  #pending-count { font-size: 12px; color: #94a3b8; }
-  #send-btn { background: #3b82f6; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
-  #send-btn:hover:not(:disabled) { background: #2563eb; }
-  #send-btn:disabled { background: #334155; color: #64748b; cursor: default; }
+  #agent-status { font-size: 12px; white-space: nowrap; display: none; }
   #orphan-wrap { position: relative; }
   #orphan-btn { background: #b45309; color: #fef3c7; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; display: none; }
   #orphan-btn:hover { background: #92400e; }
@@ -25,6 +26,11 @@ export function renderShell(key, port, version) {
   .orphan-row:hover { background: #0f172a; }
   .orphan-row-snippet { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .orphan-row-sel { font-family: monospace; font-size: 10px; color: #64748b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @keyframes loupe-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0.55)} 50%{box-shadow:0 0 0 6px rgba(59,130,246,0)} }
+  #send-btn { background: #3b82f6; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  #send-btn:hover:not(:disabled) { background: #2563eb; }
+  #send-btn:disabled { background: #334155; color: #64748b; cursor: default; }
+  #send-btn.has-pending { background: #2563eb; animation: loupe-pulse 2s infinite; }
   #artifact-wrap { flex: 1; min-height: 0; }
   #artifact-frame { width: 100%; height: 100%; border: none; background: white; display: block; }
   #status-bar { padding: 3px 12px; font-size: 11px; color: #64748b; background: #0f172a; border-top: 1px solid #334155; flex-shrink: 0; }
@@ -68,12 +74,16 @@ export function renderShell(key, port, version) {
 <div id="toolbar">
   <span id="toolbar-title">Loupe v${version}</span>
   <span id="toolbar-info">Session: ${key}</span>
+  <div id="mode-toggle">
+    <button class="mode-btn" id="mode-instant-btn">Instant</button>
+    <button class="mode-btn active" id="mode-collect-btn">Collect</button>
+  </div>
   <span id="toolbar-spacer"></span>
+  <span id="agent-status"></span>
   <span id="orphan-wrap">
     <button id="orphan-btn">&#x26A0; Orphaned (0)</button>
     <div id="orphan-list"></div>
   </span>
-  <span id="pending-count">0 pending</span>
   <button id="send-btn" disabled>Send (&#x2318;&#x21B5;)</button>
 </div>
 <div id="artifact-wrap">
@@ -94,7 +104,7 @@ export function renderShell(key, port, version) {
     <div id="modal-msgs"></div>
     <div id="modal-compose">
       <textarea id="modal-input" placeholder="Continue the thread&#x2026;"></textarea>
-      <div id="modal-hint">Enter: add note &middot; Shift+Enter: newline &middot; &#x2318;/Ctrl+Enter: add &amp; send all &middot; Esc: close</div>
+      <div id="modal-hint"></div>
     </div>
   </div>
 </div>
@@ -103,6 +113,7 @@ export function renderShell(key, port, version) {
   var KEY = ${JSON.stringify(key)};
   var API = '/api/' + KEY;
   var DRAFTS_KEY = 'loupe:drafts:' + KEY;
+  var MODE_KEY = 'loupe:send-mode';
 
   var threads = {};
   var activeThreadId = null;
@@ -110,13 +121,15 @@ export function renderShell(key, port, version) {
   var awaitingReply = {};
   var reloadCounter = 0;
   var artifactReady = false;
+  var sendMode = 'collect';
+  try { sendMode = localStorage.getItem(MODE_KEY) || 'collect'; } catch(e) {}
 
-  var pendingCountEl = document.getElementById('pending-count');
   var sendBtn = document.getElementById('send-btn');
   var statusBar = document.getElementById('status-bar');
   var artifactFrame = document.getElementById('artifact-frame');
   var orphanBtn = document.getElementById('orphan-btn');
   var orphanList = document.getElementById('orphan-list');
+  var agentStatusEl = document.getElementById('agent-status');
   var modalBackdrop = document.getElementById('modal-backdrop');
   var modalOrphanWarning = document.getElementById('modal-orphan-warning');
   var modalSnippet = document.getElementById('modal-snippet');
@@ -125,6 +138,9 @@ export function renderShell(key, port, version) {
   var modalDoneBtn = document.getElementById('modal-done-btn');
   var modalCloseBtn = document.getElementById('modal-close-btn');
   var modalInput = document.getElementById('modal-input');
+  var modalHint = document.getElementById('modal-hint');
+  var modeInstantBtn = document.getElementById('mode-instant-btn');
+  var modeCollectBtn = document.getElementById('mode-collect-btn');
 
   /* ---- uid ---- */
   function uid() {
@@ -133,7 +149,34 @@ export function renderShell(key, port, version) {
       : Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
 
-  /* ---- pending count ---- */
+  /* ---- mode toggle ---- */
+  function setMode(mode) {
+    sendMode = mode;
+    try { localStorage.setItem(MODE_KEY, mode); } catch(e) {}
+    modeInstantBtn.classList.toggle('active', mode === 'instant');
+    modeCollectBtn.classList.toggle('active', mode === 'collect');
+    modalHint.textContent = mode === 'instant'
+      ? 'Enter: send · Shift+Enter: newline · Esc: close'
+      : 'Enter: add note · Shift+Enter: newline · ⌘/Ctrl+Enter: send all · Esc: close';
+    updatePendingCount();
+  }
+
+  modeInstantBtn.addEventListener('click', function() { setMode('instant'); });
+  modeCollectBtn.addEventListener('click', function() { setMode('collect'); });
+
+  /* ---- agent status ---- */
+  function updateAgentStatus(state) {
+    agentStatusEl.style.display = '';
+    if (state === 'working') {
+      agentStatusEl.textContent = '⟳ Agent is working…';
+      agentStatusEl.style.color = '#60a5fa';
+    } else {
+      agentStatusEl.textContent = '● Agent ready';
+      agentStatusEl.style.color = '#22c55e';
+    }
+  }
+
+  /* ---- pending count / send button ---- */
   function totalDrafts() {
     var n = 0;
     for (var tid in threads) n += threads[tid].drafts.length;
@@ -142,8 +185,20 @@ export function renderShell(key, port, version) {
 
   function updatePendingCount() {
     var n = totalDrafts();
-    pendingCountEl.textContent = n + ' pending';
-    sendBtn.disabled = n === 0;
+    if (sendMode === 'collect') {
+      sendBtn.style.display = '';
+      if (n > 0) {
+        sendBtn.textContent = 'Send feedback (' + n + ')  ⌘↵';
+        sendBtn.disabled = false;
+        sendBtn.classList.add('has-pending');
+      } else {
+        sendBtn.textContent = 'Send (⌘↵)';
+        sendBtn.disabled = true;
+        sendBtn.classList.remove('has-pending');
+      }
+    } else {
+      sendBtn.style.display = 'none';
+    }
   }
 
   /* ---- orphan badge ---- */
@@ -220,7 +275,7 @@ export function renderShell(key, port, version) {
     checkAllAnchors();
   }
 
-  /* ---- anchor checking (re-resolves after each iframe reload) ---- */
+  /* ---- anchor checking ---- */
   function checkAllAnchors() {
     var toCheck = [];
     for (var tid in threads) {
@@ -373,21 +428,23 @@ export function renderShell(key, port, version) {
 
   /* ---- modal compose ---- */
   modalInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.shiftKey) return;
     var isMeta = e.metaKey || e.ctrlKey;
-    if (e.key === 'Enter' && !e.shiftKey && !isMeta) {
+    if (e.key === 'Enter' && !isMeta) {
       e.preventDefault();
       var text = modalInput.value.trim();
       if (!text || !activeThreadId || !threads[activeThreadId]) return;
       addDraft(activeThreadId, text);
       modalInput.value = '';
-    } else if (e.key === 'Enter' && !e.shiftKey && isMeta) {
+      if (sendMode === 'instant') sendAll();
+    } else if (e.key === 'Enter' && isMeta) {
       e.preventDefault();
       var text2 = modalInput.value.trim();
       if (text2 && activeThreadId && threads[activeThreadId]) {
         addDraft(activeThreadId, text2);
         modalInput.value = '';
       }
-      sendBtn.click();
+      sendAll();
     } else if (e.key === 'Escape') {
       closeModal();
     }
@@ -420,7 +477,10 @@ export function renderShell(key, port, version) {
       activeThreadId = targetTid;
       pendingCtx = null;
     }
-    if (targetTid && threads[targetTid]) addDraft(targetTid, noteText);
+    if (targetTid && threads[targetTid]) {
+      addDraft(targetTid, noteText);
+      if (sendMode === 'instant') sendAll();
+    }
   }
 
   /* ---- add draft ---- */
@@ -434,8 +494,8 @@ export function renderShell(key, port, version) {
     if (activeThreadId === tid && modalBackdrop.classList.contains('open')) renderModal(tid);
   }
 
-  /* ---- send ---- */
-  sendBtn.addEventListener('click', function() {
+  /* ---- send all drafts ---- */
+  function sendAll() {
     var batch = [];
     var sentTids = {};
     for (var tid in threads) {
@@ -448,6 +508,7 @@ export function renderShell(key, port, version) {
     }
     if (batch.length === 0) return;
     sendBtn.disabled = true;
+    sendBtn.classList.remove('has-pending');
 
     fetch(API + '/prompts', {
       method: 'POST',
@@ -468,10 +529,11 @@ export function renderShell(key, port, version) {
       updatePendingCount();
       if (activeThreadId && modalBackdrop.classList.contains('open')) renderModal(activeThreadId);
     }).catch(function() {
-      sendBtn.disabled = false;
       updatePendingCount();
     });
-  });
+  }
+
+  sendBtn.addEventListener('click', sendAll);
 
   /* ---- postMessage from artifact ---- */
   window.addEventListener('message', function(e) {
@@ -482,7 +544,7 @@ export function renderShell(key, port, version) {
     } else if (d.type === 'loupe:note') {
       if (d.text) addNoteFromIframe(d.selector || null, d.text, d.contentSnippet || null);
     } else if (d.type === 'loupe:send-all') {
-      sendBtn.click();
+      sendAll();
     } else if (d.type === 'loupe:marker-click') {
       openModal(d.threadId);
     } else if (d.type === 'loupe:anchor-report') {
@@ -536,6 +598,13 @@ export function renderShell(key, port, version) {
     } catch(err) {}
   });
 
+  evtSource.addEventListener('agent-presence', function(e) {
+    try {
+      var data = JSON.parse(e.data);
+      updateAgentStatus(data.state);
+    } catch(err) {}
+  });
+
   evtSource.onopen = function() { statusBar.textContent = 'Connected'; };
   evtSource.onerror = function() { statusBar.textContent = 'Reconnecting...'; };
 
@@ -548,6 +617,7 @@ export function renderShell(key, port, version) {
 
   /* ---- init ---- */
   (function init() {
+    setMode(sendMode);
     fetch(API + '/history').then(function(r) {
       return r.ok ? r.json() : { history: [], doneThreadIds: [] };
     }).then(function(data) {
