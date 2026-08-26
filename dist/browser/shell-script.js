@@ -8,6 +8,8 @@ let awaitingReply = {};
 let reloadCounter = 0;
 let artifactReady = false;
 let sendMode = 'collect';
+let waitSince = null;
+let timerInterval = null;
 // Scroll position captured before reload, restored on iframe load.
 let savedScrollX = 0;
 let savedScrollY = 0;
@@ -22,7 +24,10 @@ const statusBar = qs('status-bar');
 const artifactFrame = qs('artifact-frame');
 const orphanBtn = qs('orphan-btn');
 const orphanList = qs('orphan-list');
-const agentStatusEl = qs('agent-status');
+const pollLightEl = qs('poll-light');
+const pollLightLabel = qs('poll-light-label');
+const pollLightWrap = qs('poll-light-wrap');
+const responseTimer = qs('response-timer');
 const modalBackdrop = qs('modal-backdrop');
 const modalOrphanWarning = qs('modal-orphan-warning');
 const modalSnippet = qs('modal-snippet');
@@ -56,17 +61,44 @@ function setMode(mode) {
 }
 modeInstantBtn.addEventListener('click', () => setMode('instant'));
 modeCollectBtn.addEventListener('click', () => setMode('collect'));
-/* ---- agent status ---- */
-function updateAgentStatus(state) {
-    agentStatusEl.style.display = '';
-    if (state === 'working') {
-        agentStatusEl.textContent = 'Agent is working...';
-        agentStatusEl.style.color = '#60a5fa';
+/* ---- response timer ---- */
+function startTimer() {
+    waitSince = Date.now();
+    if (timerInterval !== null)
+        clearInterval(timerInterval);
+    responseTimer.textContent = 'waiting 0s';
+    responseTimer.style.display = '';
+    timerInterval = window.setInterval(() => {
+        if (waitSince === null)
+            return;
+        const secs = Math.round((Date.now() - waitSince) / 1000);
+        responseTimer.textContent = `waiting ${secs}s`;
+    }, 1000);
+}
+function stopTimer() {
+    if (timerInterval !== null) {
+        clearInterval(timerInterval);
+        timerInterval = null;
     }
-    else {
-        agentStatusEl.textContent = 'Agent ready';
-        agentStatusEl.style.color = '#22c55e';
-    }
+    waitSince = null;
+    responseTimer.style.display = 'none';
+}
+function updatePollLight(state) {
+    pollLightEl.setAttribute('data-state', state);
+    const labels = {
+        polling: 'Agent listening',
+        working: 'Agent working',
+        idle: 'Not polling',
+    };
+    const titles = {
+        polling: 'Agent connected and listening',
+        working: 'Agent working on feedback',
+        idle: 'Agent not polling',
+    };
+    pollLightLabel.textContent = labels[state];
+    pollLightWrap.title = titles[state];
+    if (state === 'polling')
+        stopTimer();
     try {
         artifactFrame.contentWindow?.postMessage({ type: 'loupe:agent-presence', state }, '*');
     }
@@ -430,6 +462,7 @@ function sendAll() {
         for (const stid in sentTids)
             awaitingReply[stid] = true;
         statusBar.textContent = 'Sent - waiting for agent...';
+        startTimer();
         updatePendingCount();
         if (activeThreadId && modalBackdrop.classList.contains('open'))
             renderModal(activeThreadId);
@@ -507,8 +540,10 @@ evtSource.addEventListener('agent-reply', (e) => {
             threads[tid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
             applyMarker(tid);
             delete awaitingReply[tid];
-            if (Object.keys(awaitingReply).length === 0)
+            if (Object.keys(awaitingReply).length === 0) {
                 statusBar.textContent = 'Connected';
+                stopTimer();
+            }
             if (activeThreadId === tid && modalBackdrop.classList.contains('open'))
                 renderModal(tid);
         }
@@ -529,7 +564,7 @@ evtSource.addEventListener('agent-reply', (e) => {
 evtSource.addEventListener('agent-presence', (e) => {
     try {
         const data = JSON.parse(e.data);
-        updateAgentStatus(data.state);
+        updatePollLight(data.state);
     }
     catch (_err) { }
 });

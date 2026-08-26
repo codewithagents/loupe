@@ -17,7 +17,11 @@ export function renderShell(key, port, version) {
   .mode-btn:hover { color: #e2e8f0; }
   .mode-btn.active { background: #334155; color: #e2e8f0; }
   #toolbar-spacer { flex: 1; }
-  #agent-status { font-size: 12px; white-space: nowrap; display: none; }
+  #poll-light-wrap { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #94a3b8; cursor: default; white-space: nowrap; }
+  #poll-light { width: 8px; height: 8px; border-radius: 50%; background: #475569; flex-shrink: 0; transition: background 0.3s; }
+  #poll-light[data-state="polling"] { background: #22c55e; }
+  #poll-light[data-state="working"] { background: #f59e0b; }
+  #response-timer { font-size: 12px; color: #60a5fa; white-space: nowrap; display: none; font-variant-numeric: tabular-nums; }
   #orphan-wrap { position: relative; }
   #orphan-btn { background: #b45309; color: #fef3c7; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; display: none; }
   #orphan-btn:hover { background: #92400e; }
@@ -79,7 +83,11 @@ export function renderShell(key, port, version) {
     <button class="mode-btn active" id="mode-collect-btn">Collect</button>
   </div>
   <span id="toolbar-spacer"></span>
-  <span id="agent-status"></span>
+  <span id="poll-light-wrap" title="Agent not polling">
+    <span id="poll-light" data-state="idle"></span>
+    <span id="poll-light-label">Not polling</span>
+  </span>
+  <span id="response-timer"></span>
   <span id="orphan-wrap">
     <button id="orphan-btn">&#x26A0; Orphaned (0)</button>
     <div id="orphan-list"></div>

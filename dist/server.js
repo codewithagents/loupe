@@ -67,10 +67,12 @@ function saveSessionState(key) {
 const sseConnections = new Map();
 const fileWatchers = new Map();
 const activePollCounts = new Map();
+const lastPresenceState = new Map();
 function sendSSE(res, event, data) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 function broadcastPresence(key, state) {
+    lastPresenceState.set(key, state);
     for (const [conn, connKey] of sseConnections) {
         if (connKey === key)
             sendSSE(conn, 'agent-presence', { state });
@@ -202,6 +204,11 @@ export function createServer(port) {
                     'Connection': 'keep-alive',
                 });
                 res.write('retry: 3000\n\n');
+                // Immediately emit the last known presence state so the light is
+                // correct on page load / refresh.
+                const knownState = lastPresenceState.get(key);
+                if (knownState)
+                    sendSSE(res, 'agent-presence', { state: knownState });
                 const pingInterval = setInterval(() => {
                     if (!res.writableEnded)
                         res.write(': ping\n\n');
@@ -300,8 +307,11 @@ export function createServer(port) {
                     const prompts = await takePrompts(key);
                     if (closed || res.writableEnded) {
                         if (pollRegistered) {
-                            activePollCounts.set(key, Math.max(0, (activePollCounts.get(key) ?? 1) - 1));
+                            const remaining = Math.max(0, (activePollCounts.get(key) ?? 1) - 1);
+                            activePollCounts.set(key, remaining);
                             pollRegistered = false;
+                            if (remaining === 0)
+                                broadcastPresence(key, 'idle');
                         }
                         if (prompts.length > 0) {
                             await restorePrompts(key, prompts);
@@ -326,15 +336,18 @@ export function createServer(port) {
                 const newCount = (activePollCounts.get(key) ?? 0) + 1;
                 activePollCounts.set(key, newCount);
                 pollRegistered = true;
-                broadcastPresence(key, 'waiting');
+                broadcastPresence(key, 'polling');
                 onFeedback(key, feedbackListener);
                 if (timeoutSec > 0) {
                     timeoutHandle = setTimeout(async () => {
                         offFeedback(key, feedbackListener);
                         if (!responding) {
                             if (pollRegistered) {
-                                activePollCounts.set(key, Math.max(0, (activePollCounts.get(key) ?? 1) - 1));
+                                const remaining = Math.max(0, (activePollCounts.get(key) ?? 1) - 1);
+                                activePollCounts.set(key, remaining);
                                 pollRegistered = false;
+                                if (remaining === 0)
+                                    broadcastPresence(key, 'idle');
                             }
                             await respond([]);
                         }
@@ -346,8 +359,11 @@ export function createServer(port) {
                     offFeedback(key, feedbackListener);
                     if (!responding) {
                         if (pollRegistered) {
-                            activePollCounts.set(key, Math.max(0, (activePollCounts.get(key) ?? 1) - 1));
+                            const remaining = Math.max(0, (activePollCounts.get(key) ?? 1) - 1);
+                            activePollCounts.set(key, remaining);
                             pollRegistered = false;
+                            if (remaining === 0)
+                                broadcastPresence(key, 'idle');
                         }
                         const prompts = await takePrompts(key);
                         if (prompts.length > 0) {

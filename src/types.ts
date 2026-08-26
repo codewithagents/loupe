@@ -105,7 +105,7 @@ export interface SSEAgentReplyPayload {
 }
 
 export interface SSEAgentPresencePayload {
-  state: 'waiting' | 'working';
+  state: 'polling' | 'working' | 'idle';
 }
 
 // ---- postMessage types (iframe SDK ↔ shell) ----
@@ -174,7 +174,7 @@ export interface PmAnchorReport {
 
 export interface PmAgentPresence {
   type: 'loupe:agent-presence';
-  state: 'waiting' | 'working';
+  state: 'polling' | 'working' | 'idle';
 }
 
 export type ShellToSdkMessage = PmAddMarker | PmClearMarkers | PmRemoveMarker | PmCheckAnchors | PmAgentPresence;

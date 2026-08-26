@@ -58,6 +58,8 @@ let awaitingReply: Record<string, boolean> = {};
 let reloadCounter = 0;
 let artifactReady = false;
 let sendMode: SendMode = 'collect';
+let waitSince: number | null = null;
+let timerInterval: number | null = null;
 
 // Scroll position captured before reload, restored on iframe load.
 let savedScrollX = 0;
@@ -73,7 +75,10 @@ const statusBar = qs<HTMLElement>('status-bar');
 const artifactFrame = qs<HTMLIFrameElement>('artifact-frame');
 const orphanBtn = qs<HTMLButtonElement>('orphan-btn');
 const orphanList = qs<HTMLDivElement>('orphan-list');
-const agentStatusEl = qs<HTMLElement>('agent-status');
+const pollLightEl = qs<HTMLElement>('poll-light');
+const pollLightLabel = qs<HTMLElement>('poll-light-label');
+const pollLightWrap = qs<HTMLElement>('poll-light-wrap');
+const responseTimer = qs<HTMLElement>('response-timer');
 const modalBackdrop = qs<HTMLDivElement>('modal-backdrop');
 const modalOrphanWarning = qs<HTMLDivElement>('modal-orphan-warning');
 const modalSnippet = qs<HTMLElement>('modal-snippet');
@@ -108,16 +113,43 @@ function setMode(mode: SendMode): void {
 modeInstantBtn.addEventListener('click', () => setMode('instant'));
 modeCollectBtn.addEventListener('click', () => setMode('collect'));
 
-/* ---- agent status ---- */
-function updateAgentStatus(state: 'waiting' | 'working'): void {
-  agentStatusEl.style.display = '';
-  if (state === 'working') {
-    agentStatusEl.textContent = 'Agent is working...';
-    agentStatusEl.style.color = '#60a5fa';
-  } else {
-    agentStatusEl.textContent = 'Agent ready';
-    agentStatusEl.style.color = '#22c55e';
-  }
+/* ---- response timer ---- */
+function startTimer(): void {
+  waitSince = Date.now();
+  if (timerInterval !== null) clearInterval(timerInterval);
+  responseTimer.textContent = 'waiting 0s';
+  responseTimer.style.display = '';
+  timerInterval = window.setInterval(() => {
+    if (waitSince === null) return;
+    const secs = Math.round((Date.now() - waitSince) / 1000);
+    responseTimer.textContent = `waiting ${secs}s`;
+  }, 1000);
+}
+
+function stopTimer(): void {
+  if (timerInterval !== null) { clearInterval(timerInterval); timerInterval = null; }
+  waitSince = null;
+  responseTimer.style.display = 'none';
+}
+
+/* ---- poll light ---- */
+type PresenceState = 'polling' | 'working' | 'idle';
+
+function updatePollLight(state: PresenceState): void {
+  pollLightEl.setAttribute('data-state', state);
+  const labels: Record<PresenceState, string> = {
+    polling: 'Agent listening',
+    working: 'Agent working',
+    idle: 'Not polling',
+  };
+  const titles: Record<PresenceState, string> = {
+    polling: 'Agent connected and listening',
+    working: 'Agent working on feedback',
+    idle: 'Agent not polling',
+  };
+  pollLightLabel.textContent = labels[state];
+  pollLightWrap.title = titles[state];
+  if (state === 'polling') stopTimer();
   try { artifactFrame.contentWindow?.postMessage({ type: 'loupe:agent-presence', state }, '*'); } catch (_e) {}
 }
 
@@ -460,6 +492,7 @@ function sendAll(): void {
     try { localStorage.removeItem(DRAFTS_KEY); } catch (_e) {}
     for (const stid in sentTids) awaitingReply[stid] = true;
     statusBar.textContent = 'Sent - waiting for agent...';
+    startTimer();
     updatePendingCount();
     if (activeThreadId && modalBackdrop.classList.contains('open')) renderModal(activeThreadId);
   }).catch(() => {
@@ -526,7 +559,7 @@ evtSource.addEventListener('agent-reply', (e: Event) => {
       threads[tid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
       applyMarker(tid);
       delete awaitingReply[tid];
-      if (Object.keys(awaitingReply).length === 0) statusBar.textContent = 'Connected';
+      if (Object.keys(awaitingReply).length === 0) { statusBar.textContent = 'Connected'; stopTimer(); }
       if (activeThreadId === tid && modalBackdrop.classList.contains('open')) renderModal(tid);
     } else {
       const btid = '__broadcast__';
@@ -543,7 +576,7 @@ evtSource.addEventListener('agent-reply', (e: Event) => {
 evtSource.addEventListener('agent-presence', (e: Event) => {
   try {
     const data = JSON.parse((e as MessageEvent).data) as SSEAgentPresencePayload;
-    updateAgentStatus(data.state);
+    updatePollLight(data.state);
   } catch (_err) {}
 });
 
