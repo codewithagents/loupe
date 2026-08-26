@@ -1,0 +1,18 @@
+{
+  "name": "codewithagents",
+  "owner": {
+    "name": "CodeWithAgents",
+    "url": "https://github.com/codewithagents"
+  },
+  "plugins": [
+    {
+      "name": "loupe",
+      "source": "./",
+      "description": "Interactive HTML artifact review loop for local coding agents.",
+      "homepage": "https://github.com/codewithagents/loupe",
+      "repository": "https://github.com/codewithagents/loupe",
+      "license": "MIT",
+      "keywords": ["skill", "html", "feedback", "review", "agent", "annotation"]
+    }
+  ]
+}

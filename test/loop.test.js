@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { writeFile, unlink, mkdtemp } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { createServer, keyFromPath } from '../assets/server.js';
+import { createServer, keyFromPath } from '../scripts/server.js';
 
 const TEST_PORT = 17429;
 const BASE = `http://127.0.0.1:${TEST_PORT}`;

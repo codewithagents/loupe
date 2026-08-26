@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Interactive HTML feedback loop for Claude Code agents",
-  "main": "assets/cli.js",
+  "main": "scripts/cli.js",
   "bin": {
-    "loupe": "assets/cli.js"
+    "loupe": "scripts/cli.js"
   },
   "scripts": {
     "test": "node --test test/loop.test.js"
