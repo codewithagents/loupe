@@ -34,6 +34,7 @@ export function renderShell(key, port, version) {
   .thread-label { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .thread-label-sel { font-family: monospace; color: #f59e0b; }
   .thread-label-gen { color: #94a3b8; font-style: italic; }
+  .thread-awaiting { font-size: 10px; color: #64748b; font-style: italic; flex-shrink: 0; }
   #tl-footer { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; flex-shrink: 0; border-top: 1px solid #334155; }
   #pending-count { font-size: 11px; color: #64748b; }
   #send-btn { background: #3b82f6; color: white; border: none; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 12px; font-weight: 500; }
@@ -105,6 +106,7 @@ export function renderShell(key, port, version) {
   var threads = {};
   var activeThreadId = null;
   var pendingCtx = null; // transient selected-element context; thread only created when note is added
+  var awaitingReply = {}; // threadIds that have been sent but have no agent reply yet
   var reloadCounter = 0;
   var artifactReady = false;
 
@@ -229,6 +231,13 @@ export function renderShell(key, port, version) {
         label.appendChild(sp2);
       }
       row.appendChild(label);
+
+      if (awaitingReply[tid]) {
+        var aw = document.createElement('span');
+        aw.className = 'thread-awaiting';
+        aw.textContent = 'awaiting…';
+        row.appendChild(aw);
+      }
 
       (function(threadId) {
         row.addEventListener('click', function() {
@@ -366,11 +375,13 @@ export function renderShell(key, port, version) {
   /* ---- send ---- */
   sendBtn.addEventListener('click', function() {
     var batch = [];
+    var sentTids = {};
     for (var tid in threads) {
       var t = threads[tid];
       for (var i = 0; i < t.drafts.length; i++) {
         var d = t.drafts[i];
         batch.push({ uid: d.uid, threadId: tid, prompt: d.prompt, selector: t.selector, tag: 'note', text: t.selText, target: null });
+        sentTids[tid] = true;
       }
     }
     if (batch.length === 0) return;
@@ -390,6 +401,8 @@ export function renderShell(key, port, version) {
         applyMarker(tid);
       }
       try { localStorage.removeItem(DRAFTS_KEY); } catch(e) {}
+      for (var stid in sentTids) awaitingReply[stid] = true;
+      statusBar.textContent = 'Sent - waiting for agent…';
       renderThreadList();
       renderThreadDetail();
     }).catch(function() {
@@ -461,6 +474,8 @@ export function renderShell(key, port, version) {
       if (tid && threads[tid]) {
         threads[tid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
         applyMarker(tid);
+        delete awaitingReply[tid];
+        if (Object.keys(awaitingReply).length === 0) statusBar.textContent = 'Connected';
         renderThreadList();
         if (activeThreadId === tid) renderThreadDetail();
       } else {
