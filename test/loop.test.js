@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile, unlink, mkdtemp } from 'node:fs/promises';
+import { writeFile, unlink, mkdtemp, rename } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createServer, keyFromPath } from '../scripts/server.js';
+import { watchFile } from '../scripts/watch.js';
 
 const TEST_PORT = 17429;
 const BASE = `http://127.0.0.1:${TEST_PORT}`;
@@ -113,6 +114,71 @@ test('full poll loop: prompts are delivered and normalized', async () => {
   assert.deepEqual(keys.sort(), ['prompt', 'selector', 'tag', 'target', 'text', 'uid'].sort());
 
   assert.ok(result.next_step, 'next_step hint should be present');
+
+  await unlink(filePath);
+});
+
+test('batch poll: multiple prompts returned in a single poll response', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-batch-'));
+  const filePath = path.join(tmpDir, 'artifact.html');
+  await writeFile(filePath, '<html><body><p>Batch test</p></body></html>');
+
+  const sessR = await fetch(`${BASE}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: filePath }),
+  });
+  const { key } = await sessR.json();
+
+  const pollPromise = fetch(`${BASE}/api/poll?file=${encodeURIComponent(filePath)}&timeout=5`);
+  await new Promise(r => setTimeout(r, 100));
+
+  await fetch(`${BASE}/api/${key}/prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompts: [
+        { uid: 'batch-001', prompt: 'First note', selector: 'p', tag: 'note', text: null, target: null },
+        { uid: 'batch-002', prompt: 'Second note', selector: null, tag: 'note', text: 'some text', target: null },
+        { uid: 'batch-003', prompt: 'Third note', selector: 'h1', tag: 'note', text: null, target: null },
+      ],
+    }),
+  });
+
+  const pollR = await pollPromise;
+  const result = JSON.parse((await pollR.text()).trim());
+
+  assert.ok(Array.isArray(result.prompts));
+  assert.equal(result.prompts.length, 3, 'all three prompts should arrive in one poll response');
+  assert.equal(result.prompts[0].uid, 'batch-001');
+  assert.equal(result.prompts[1].uid, 'batch-002');
+  assert.equal(result.prompts[2].uid, 'batch-003');
+
+  await unlink(filePath);
+});
+
+test('watcher: detects file change after atomic inode replacement (write-temp-rename)', async (t) => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-watch-'));
+  const filePath = path.join(tmpDir, 'watched.html');
+  await writeFile(filePath, '<html><body>v1</body></html>');
+
+  let reloadCount = 0;
+  const stop = watchFile(filePath, () => { reloadCount++; });
+
+  // Give watcher time to start
+  await new Promise(r => setTimeout(r, 100));
+
+  // Atomic save: write to a temp file then rename (simulates editor behaviour)
+  const tmpFile = filePath + '.tmp';
+  await writeFile(tmpFile, '<html><body>v2</body></html>');
+  await rename(tmpFile, filePath);
+
+  // Wait for debounce + stability check (150ms debounce + 3*60ms stability + buffer)
+  await new Promise(r => setTimeout(r, 700));
+
+  stop();
+
+  assert.ok(reloadCount >= 1, 'reload should have fired at least once after atomic rename, got: ' + reloadCount);
 
   await unlink(filePath);
 });

@@ -1,8 +1,14 @@
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
+import path from 'node:path';
 
 export function watchFile(absPath, onReload) {
   let debounceTimer = null;
+  let watcher = null;
+  let stopped = false;
+
+  const dir = path.dirname(absPath);
+  const basename = path.basename(absPath);
 
   async function checkStability(retries = 3) {
     try {
@@ -22,13 +28,35 @@ export function watchFile(absPath, onReload) {
     }
   }
 
-  const watcher = fs.watch(absPath, () => {
+  function scheduleCheck() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => checkStability(), 150);
-  });
+  }
+
+  function startWatcher() {
+    if (stopped) return;
+    try {
+      watcher = fs.watch(dir, (eventType, filename) => {
+        if (filename === basename) {
+          scheduleCheck();
+        }
+      });
+      watcher.on('error', () => {
+        if (!stopped) {
+          watcher.close();
+          setTimeout(startWatcher, 200);
+        }
+      });
+    } catch {
+      if (!stopped) setTimeout(startWatcher, 200);
+    }
+  }
+
+  startWatcher();
 
   return () => {
+    stopped = true;
     clearTimeout(debounceTimer);
-    watcher.close();
+    if (watcher) watcher.close();
   };
 }

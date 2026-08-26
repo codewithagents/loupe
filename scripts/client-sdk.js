@@ -7,8 +7,6 @@ export const clientSdkSource = `(function() {
   })();
 
   var overlay = null;
-  var currentSelector = null;
-  var currentText = null;
 
   function buildSelector(el) {
     var parts = [];
@@ -34,6 +32,11 @@ export const clientSdkSource = `(function() {
       node = node.parentElement;
     }
     return parts.join(' > ');
+  }
+
+  function rectOf(el) {
+    var r = el.getBoundingClientRect();
+    return { top: r.top, left: r.left, width: r.width, height: r.height };
   }
 
   function showOverlay(el) {
@@ -64,8 +67,12 @@ export const clientSdkSource = `(function() {
   });
 
   document.addEventListener('click', function(e) {
-    currentSelector = buildSelector(e.target);
-    window.parent.postMessage({ type: 'loupe:element', selector: currentSelector }, '*');
+    var selector = buildSelector(e.target);
+    window.parent.postMessage({
+      type: 'loupe:element',
+      selector: selector,
+      rect: rectOf(e.target)
+    }, '*');
     e.preventDefault();
     e.stopPropagation();
   }, true);
@@ -73,15 +80,20 @@ export const clientSdkSource = `(function() {
   document.addEventListener('mouseup', function() {
     var sel = window.getSelection();
     if (sel && sel.toString().trim()) {
-      currentText = sel.toString().trim();
-      window.parent.postMessage({ type: 'loupe:selection', text: currentText }, '*');
+      var text = sel.toString().trim();
+      var rect = { top: 0, left: 0, width: 0, height: 0 };
+      if (sel.rangeCount > 0) {
+        var r = sel.getRangeAt(0).getBoundingClientRect();
+        rect = { top: r.top, left: r.left, width: r.width, height: r.height };
+      }
+      window.parent.postMessage({ type: 'loupe:selection', text: text, rect: rect }, '*');
     }
   });
 
   document.addEventListener('selectionchange', function() {
     var sel = window.getSelection();
     if (sel && sel.toString().trim()) {
-      currentText = sel.toString().trim();
+      // tracked via mouseup for rect; this keeps text fresh
     }
   });
 })();
