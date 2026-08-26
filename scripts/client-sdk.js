@@ -44,6 +44,11 @@ export const clientSdkSource = `(function() {
     return { top: r.top, left: r.left, width: r.width, height: r.height };
   }
 
+  function getContentSnippet(el) {
+    var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    return text.length > 80 ? text.slice(0, 80) + '…' : text;
+  }
+
   function isLoupeEl(el) {
     if (markerContainer && markerContainer.contains(el)) return true;
     if (composeBox && composeBox.contains(el)) return true;
@@ -61,11 +66,11 @@ export const clientSdkSource = `(function() {
     return markerContainer;
   }
 
-  function makeMarkerEl(threadId, count, pending) {
+  function makeMarkerEl(threadId, count, state) {
     var el = document.createElement('button');
     el.setAttribute('data-loupe-marker', threadId);
-    el.style.cssText = 'position:absolute;pointer-events:auto;width:22px;height:22px;border-radius:50%;border:2px solid rgba(0,0,0,0.15);font-size:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.35);line-height:1;padding:0;transition:transform 0.1s;';
-    updateMarkerStyle(el, count, pending);
+    el.style.cssText = 'position:absolute;pointer-events:auto;width:22px;height:22px;border-radius:50%;font-size:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.35);line-height:1;padding:0;transition:transform 0.1s;';
+    updateMarkerStyle(el, count, state);
     el.addEventListener('click', function(e) {
       e.stopPropagation();
       e.preventDefault();
@@ -77,10 +82,28 @@ export const clientSdkSource = `(function() {
     return el;
   }
 
-  function updateMarkerStyle(el, count, pending) {
-    el.style.background = pending ? '#f59e0b' : '#3b82f6';
-    el.style.color = pending ? '#000' : '#fff';
-    el.textContent = String(count);
+  function updateMarkerStyle(el, count, state) {
+    if (state === 'done') {
+      el.style.background = '#4b5563';
+      el.style.color = '#9ca3af';
+      el.style.border = '2px solid rgba(0,0,0,0.1)';
+      el.textContent = '✓';
+    } else if (state === 'agent-last') {
+      el.style.background = '#3b82f6';
+      el.style.color = '#fff';
+      el.style.border = '2px solid rgba(0,0,0,0.15)';
+      el.textContent = String(count);
+    } else if (state === 'user-last') {
+      el.style.background = '#f59e0b';
+      el.style.color = '#000';
+      el.style.border = '2px solid rgba(0,0,0,0.15)';
+      el.textContent = String(count);
+    } else {
+      el.style.background = 'transparent';
+      el.style.color = '#94a3b8';
+      el.style.border = '2px solid #94a3b8';
+      el.textContent = String(count);
+    }
   }
 
   function positionMarker(el, selector) {
@@ -125,6 +148,7 @@ export const clientSdkSource = `(function() {
   /* ---- inline compose ---- */
   function openCompose(el, selector) {
     if (composeBox) { composeBox.remove(); composeBox = null; }
+    var contentSnippet = getContentSnippet(el);
 
     var r = el.getBoundingClientRect();
     var mg = 8;
@@ -162,12 +186,12 @@ export const clientSdkSource = `(function() {
       if (e.key === 'Enter' && !e.shiftKey && !isMeta) {
         e.preventDefault();
         var text = ta.value.trim();
-        if (text) window.parent.postMessage({ type: 'loupe:note', selector: selector, text: text }, '*');
+        if (text) window.parent.postMessage({ type: 'loupe:note', selector: selector, text: text, contentSnippet: contentSnippet }, '*');
         closeCompose();
       } else if (e.key === 'Enter' && !e.shiftKey && isMeta) {
         e.preventDefault();
         var text2 = ta.value.trim();
-        if (text2) window.parent.postMessage({ type: 'loupe:note', selector: selector, text: text2 }, '*');
+        if (text2) window.parent.postMessage({ type: 'loupe:note', selector: selector, text: text2, contentSnippet: contentSnippet }, '*');
         closeCompose();
         window.parent.postMessage({ type: 'loupe:send-all' }, '*');
       } else if (e.key === 'Escape') {
@@ -209,10 +233,10 @@ export const clientSdkSource = `(function() {
     if (d.type === 'loupe:add-marker') {
       var container = getMarkerContainer();
       if (markers[d.threadId]) {
-        updateMarkerStyle(markers[d.threadId].el, d.count, d.pending);
+        updateMarkerStyle(markers[d.threadId].el, d.count, d.state);
         markers[d.threadId].selector = d.selector;
       } else {
-        var el = makeMarkerEl(d.threadId, d.count, d.pending);
+        var el = makeMarkerEl(d.threadId, d.count, d.state);
         container.appendChild(el);
         markers[d.threadId] = { el: el, selector: d.selector };
       }

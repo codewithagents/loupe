@@ -104,10 +104,11 @@ test('full poll loop: prompts are delivered and normalized with threadId', async
   assert.equal(p.tag, 'note');
   assert.equal(p.text, 'Hello');
   assert.equal(p.target, null);
+  assert.equal(p.contentSnippet, null);
   assert.equal(p.extraField, undefined);
 
   const keys = Object.keys(p).sort();
-  assert.deepEqual(keys, ['prompt', 'selector', 'tag', 'target', 'text', 'threadId', 'uid'].sort());
+  assert.deepEqual(keys, ['contentSnippet', 'prompt', 'selector', 'tag', 'target', 'text', 'threadId', 'uid'].sort());
 
   assert.ok(result.next_step);
 

@@ -9,7 +9,7 @@ const mutex = new Mutex();
 
 export function getOrCreateSession(key, filePath) {
   if (!sessions.has(key)) {
-    sessions.set(key, { key, filePath, prompts: [], history: [] });
+    sessions.set(key, { key, filePath, prompts: [], history: [], doneThreads: new Set() });
   }
   return sessions.get(key);
 }
@@ -49,6 +49,7 @@ export async function appendPrompts(key, prompts) {
         tag: p.tag,
         text: p.text,
         target: p.target,
+        contentSnippet: p.contentSnippet ?? null,
       });
     }
   });
@@ -79,7 +80,22 @@ export function resolveThread(key, ref) {
 
 export function getHistory(key) {
   const session = sessions.get(key);
-  return session ? [...session.history] : [];
+  if (!session) return null;
+  return { history: [...session.history], doneThreadIds: [...session.doneThreads] };
+}
+
+export async function toggleDone(key, threadId) {
+  return mutex.run(() => {
+    const session = sessions.get(key);
+    if (!session) return null;
+    if (session.doneThreads.has(threadId)) {
+      session.doneThreads.delete(threadId);
+      return { done: false };
+    } else {
+      session.doneThreads.add(threadId);
+      return { done: true };
+    }
+  });
 }
 
 export function emitFeedback(key) {

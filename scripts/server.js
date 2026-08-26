@@ -16,6 +16,7 @@ import {
   appendReply,
   resolveThread,
   getHistory,
+  toggleDone,
   emitFeedback,
   onFeedback,
   offFeedback,
@@ -71,6 +72,7 @@ function normalizePrompt(p) {
     tag: p.tag ?? 'note',
     text: p.text ?? null,
     target: p.target ?? null,
+    contentSnippet: p.contentSnippet ?? null,
   };
 }
 
@@ -206,9 +208,21 @@ export function createServer(port) {
       const historyMatch = pathname.match(/^\/api\/([a-f0-9]{16})\/history$/);
       if (method === 'GET' && historyMatch) {
         const key = historyMatch[1];
-        const history = getHistory(key);
+        const data = getHistory(key);
+        if (!data) return notFound(res);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ history }));
+        res.end(JSON.stringify(data));
+        return;
+      }
+
+      // POST /api/:key/thread/:threadId/done
+      const doneMatch = pathname.match(/^\/api\/([a-f0-9]{16})\/thread\/([^/]+)\/done$/);
+      if (method === 'POST' && doneMatch) {
+        const [, key, threadId] = doneMatch;
+        const result = await toggleDone(key, decodeURIComponent(threadId));
+        if (!result) return notFound(res);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
         return;
       }
 
