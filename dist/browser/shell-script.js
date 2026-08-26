@@ -6,6 +6,7 @@ const threads = {};
 let activeThreadId = null;
 let awaitingReply = {};
 let presenceState = 'idle';
+let globalModalOpen = false;
 let reloadCounter = 0;
 let artifactReady = false;
 let sendMode = 'collect';
@@ -45,6 +46,8 @@ const resetBtn = qs('reset-btn');
 const resetConfirm = qs('reset-confirm');
 const resetYesBtn = qs('reset-yes-btn');
 const resetNoBtn = qs('reset-no-btn');
+const globalFab = qs('global-fab');
+const globalFabBadge = qs('global-fab-badge');
 /* ---- uid ---- */
 function uid() {
     return (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -373,15 +376,19 @@ function renderModal(tid) {
 function openModal(tid) {
     if (!threads[tid])
         return;
+    globalModalOpen = false;
     activeThreadId = tid;
+    modalDoneBtn.style.display = '';
     renderModal(tid);
     modalBackdrop.classList.add('open');
     setTimeout(() => { modalInput.focus(); }, 50);
 }
 function closeModal() {
+    globalModalOpen = false;
     modalBackdrop.classList.remove('open');
     activeThreadId = null;
     modalInput.value = '';
+    modalDoneBtn.style.display = '';
 }
 /* ---- done toggle ---- */
 modalDoneBtn.addEventListener('click', () => {
@@ -390,6 +397,7 @@ modalDoneBtn.addEventListener('click', () => {
     const tid = activeThreadId;
     threads[tid].done = !threads[tid].done;
     applyMarker(tid);
+    updateGlobalFab();
     renderModal(tid);
     fetch(`${API}/thread/${encodeURIComponent(tid)}/done`, { method: 'POST' }).catch(() => { });
 });
@@ -410,6 +418,11 @@ document.addEventListener('keydown', (e) => {
     }
 });
 /* ---- modal compose ---- */
+function addGlobalDraft(text) {
+    const newTid = uid();
+    threads[newTid] = { threadId: newTid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
+    addDraft(newTid, text);
+}
 modalInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.shiftKey)
         return;
@@ -417,21 +430,45 @@ modalInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !isMeta) {
         e.preventDefault();
         const text = modalInput.value.trim();
-        if (!text || !activeThreadId || !threads[activeThreadId])
+        if (!text)
             return;
-        addDraft(activeThreadId, text);
-        modalInput.value = '';
-        if (sendMode === 'instant')
-            sendAll();
+        if (globalModalOpen) {
+            addGlobalDraft(text);
+            modalInput.value = '';
+            if (sendMode === 'instant') {
+                sendAll();
+                closeModal();
+            }
+            else
+                renderGlobalModal();
+        }
+        else {
+            if (!activeThreadId || !threads[activeThreadId])
+                return;
+            addDraft(activeThreadId, text);
+            modalInput.value = '';
+            if (sendMode === 'instant')
+                sendAll();
+        }
     }
     else if (e.key === 'Enter' && isMeta) {
         e.preventDefault();
         const text = modalInput.value.trim();
-        if (text && activeThreadId && threads[activeThreadId]) {
-            addDraft(activeThreadId, text);
-            modalInput.value = '';
+        if (globalModalOpen) {
+            if (text) {
+                addGlobalDraft(text);
+                modalInput.value = '';
+            }
+            sendAll();
+            closeModal();
         }
-        sendAll();
+        else {
+            if (text && activeThreadId && threads[activeThreadId]) {
+                addDraft(activeThreadId, text);
+                modalInput.value = '';
+            }
+            sendAll();
+        }
     }
     else if (e.key === 'Escape') {
         closeModal();
@@ -477,6 +514,7 @@ function addDraft(tid, prompt) {
     t.drafts.push({ uid: uid(), prompt });
     applyMarker(tid);
     updatePendingCount();
+    updateGlobalFab();
     saveDrafts();
     if (activeThreadId === tid && modalBackdrop.classList.contains('open'))
         renderModal(tid);
@@ -573,6 +611,78 @@ window.addEventListener('message', (e) => {
             renderModal(activeThreadId);
     }
 });
+/* ---- global FAB ---- */
+function updateGlobalFab() {
+    const count = Object.keys(threads).filter(tid => {
+        const t = threads[tid];
+        return t.selector === null && !t.orphaned && (t.messages.length > 0 || t.drafts.length > 0);
+    }).length;
+    if (count === 0) {
+        globalFabBadge.style.display = 'none';
+    }
+    else {
+        globalFabBadge.textContent = String(count);
+        globalFabBadge.style.display = 'flex';
+    }
+}
+function renderGlobalModal() {
+    const globalTids = Object.keys(threads).filter(tid => threads[tid].selector === null && !threads[tid].orphaned);
+    modalOrphanWarning.style.display = 'none';
+    modalSnippet.textContent = globalTids.length > 0 ? `Global notes (${globalTids.length})` : 'Global notes';
+    modalSel.textContent = 'Not anchored to any element';
+    modalDoneBtn.style.display = 'none';
+    modalMsgs.innerHTML = '';
+    if (globalTids.length === 0) {
+        const empty = document.createElement('div');
+        empty.id = 'modal-empty';
+        empty.textContent = 'No global notes yet. Type below to add one.';
+        modalMsgs.appendChild(empty);
+    }
+    else {
+        for (const tid of globalTids) {
+            const t = threads[tid];
+            const firstContent = t.messages.length > 0
+                ? t.messages[0].content
+                : (t.drafts.length > 0 ? t.drafts[0].prompt : '');
+            const msgCount = t.messages.length + t.drafts.length;
+            const row = document.createElement('button');
+            row.className = 'global-thread-row';
+            const firstDiv = document.createElement('div');
+            firstDiv.className = 'global-thread-first';
+            firstDiv.textContent = firstContent || '(empty)';
+            row.appendChild(firstDiv);
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'global-thread-meta';
+            let metaText = `${msgCount} message${msgCount !== 1 ? 's' : ''}`;
+            if (t.done)
+                metaText += ' · resolved';
+            else if (t.interimMsg)
+                metaText += ' · agent working...';
+            else if (t.queued)
+                metaText += ' · queued';
+            else if (t.messages.length > 0 && t.messages[t.messages.length - 1].role === 'agent')
+                metaText += ' · replied';
+            else if (t.drafts.length > 0)
+                metaText += ' · draft';
+            metaDiv.textContent = metaText;
+            row.appendChild(metaDiv);
+            row.addEventListener('click', () => openModal(tid));
+            modalMsgs.appendChild(row);
+        }
+    }
+    modalMsgs.scrollTop = modalMsgs.scrollHeight;
+    modalHint.textContent = sendMode === 'instant'
+        ? 'Enter: send global note  Shift+Enter: newline  Esc: close'
+        : 'Enter: add global note  Shift+Enter: newline  Cmd+Enter: send all  Esc: close';
+}
+function openGlobalModal() {
+    globalModalOpen = true;
+    activeThreadId = null;
+    renderGlobalModal();
+    modalBackdrop.classList.add('open');
+    setTimeout(() => { modalInput.focus(); }, 50);
+}
+globalFab.addEventListener('click', openGlobalModal);
 /* ---- reset ---- */
 let resetConfirmTimeout = null;
 function showResetConfirm() {
@@ -607,6 +717,7 @@ function clearClientState() {
     updatePendingCount();
     updateOrphanBadge();
     updateQueuedHint();
+    updateGlobalFab();
     stopTimer();
     statusBar.textContent = 'Reset. Ready for new annotations.';
 }
@@ -643,12 +754,15 @@ evtSource.addEventListener('agent-reply', (e) => {
             threads[tid].interimMsg = null;
             threads[tid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
             applyMarker(tid);
+            updateGlobalFab();
             delete awaitingReply[tid];
             if (Object.keys(awaitingReply).length === 0) {
                 statusBar.textContent = 'Connected';
                 stopTimer();
             }
-            if (activeThreadId === tid && modalBackdrop.classList.contains('open'))
+            if (globalModalOpen && modalBackdrop.classList.contains('open'))
+                renderGlobalModal();
+            else if (activeThreadId === tid && modalBackdrop.classList.contains('open'))
                 renderModal(tid);
         }
         else {
@@ -657,7 +771,10 @@ evtSource.addEventListener('agent-reply', (e) => {
                 threads[btid] = { threadId: btid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
             }
             threads[btid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
-            if (activeThreadId === btid && modalBackdrop.classList.contains('open'))
+            updateGlobalFab();
+            if (globalModalOpen && modalBackdrop.classList.contains('open'))
+                renderGlobalModal();
+            else if (activeThreadId === btid && modalBackdrop.classList.contains('open'))
                 renderModal(btid);
             else
                 openModal(btid);
@@ -679,7 +796,9 @@ evtSource.addEventListener('agent-interim', (e) => {
         if (tid && threads[tid]) {
             threads[tid].interimMsg = { content: data.text };
             applyMarker(tid);
-            if (activeThreadId === tid && modalBackdrop.classList.contains('open'))
+            if (globalModalOpen && modalBackdrop.classList.contains('open'))
+                renderGlobalModal();
+            else if (activeThreadId === tid && modalBackdrop.classList.contains('open'))
                 renderModal(tid);
         }
     }
@@ -714,11 +833,13 @@ artifactFrame.addEventListener('load', () => {
         restoreHistory(data.history || [], data.doneThreadIds || []);
         loadDrafts();
         updatePendingCount();
+        updateGlobalFab();
         artifactFrame.src = '/artifact/' + KEY + '/';
     })
         .catch(() => {
         loadDrafts();
         updatePendingCount();
+        updateGlobalFab();
         artifactFrame.src = '/artifact/' + KEY + '/';
     });
 })();

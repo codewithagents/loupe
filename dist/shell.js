@@ -36,6 +36,14 @@ export function renderShell(key, port, version) {
   #send-btn:hover:not(:disabled) { background: #2563eb; }
   #send-btn:disabled { background: #334155; color: #64748b; cursor: default; }
   #send-btn.has-pending { background: #2563eb; animation: loupe-pulse 2s infinite; }
+  #global-fab { position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px; border-radius: 50%; background: #3b82f6; color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 8500; transition: background 0.15s; }
+  #global-fab:hover { background: #2563eb; transform: scale(1.05); }
+  #global-fab-badge { position: absolute; top: -3px; right: -3px; background: #f59e0b; color: #000; border-radius: 50%; font-size: 10px; font-weight: 700; width: 18px; height: 18px; display: none; align-items: center; justify-content: center; line-height: 1; pointer-events: none; }
+  .global-thread-row { display: block; width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; text-align: left; cursor: pointer; color: #e2e8f0; margin-bottom: 6px; }
+  .global-thread-row:hover { border-color: #3b82f6; }
+  .global-thread-row:last-child { margin-bottom: 0; }
+  .global-thread-first { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px; }
+  .global-thread-meta { font-size: 11px; color: #64748b; }
   #reset-btn { background: transparent; color: #64748b; border: 1px solid #334155; border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 12px; white-space: nowrap; }
   #reset-btn:hover { color: #f87171; border-color: #7f1d1d; }
   #reset-confirm { display: none; align-items: center; gap: 6px; font-size: 12px; color: #fca5a5; white-space: nowrap; }
@@ -129,6 +137,7 @@ export function renderShell(key, port, version) {
     </div>
   </div>
 </div>
+<button id="global-fab" title="Global notes (not anchored to any element)" aria-label="Global notes">&#x1F4AC;<span id="global-fab-badge"></span></button>
 <script>window.__LOUPE=${JSON.stringify({ key, port, version })};</script>
 <script type="module" src="/shell-script.js"></script>
 </body>
