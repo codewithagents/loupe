@@ -172,7 +172,12 @@ export interface PmAnchorReport {
   results: PmAnchorResult[];
 }
 
-export type ShellToSdkMessage = PmAddMarker | PmClearMarkers | PmRemoveMarker | PmCheckAnchors;
+export interface PmAgentPresence {
+  type: 'loupe:agent-presence';
+  state: 'waiting' | 'working';
+}
+
+export type ShellToSdkMessage = PmAddMarker | PmClearMarkers | PmRemoveMarker | PmCheckAnchors | PmAgentPresence;
 export type SdkToShellMessage = PmElement | PmNote | PmSendAll | PmMarkerClick | PmAnchorReport | PmSelection;
 
 // ---- State file (persistence across server restarts) ----

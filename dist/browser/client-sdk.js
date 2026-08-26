@@ -6,6 +6,11 @@ let selectedEl = null;
 let composeBox = null;
 let markerContainer = null;
 let markers = {};
+let presenceWorking = false;
+// Inject pulse keyframe once at module load.
+const _pulseStyle = document.createElement('style');
+_pulseStyle.textContent = '@keyframes loupe-pulse{0%,100%{box-shadow:0 2px 6px rgba(0,0,0,0.35),0 0 0 0 rgba(245,158,11,0.55)}50%{box-shadow:0 2px 6px rgba(0,0,0,0.35),0 0 0 5px rgba(245,158,11,0)}} .loupe-awaiting-pulse{animation:loupe-pulse 1.4s ease-in-out infinite;}';
+document.head.appendChild(_pulseStyle);
 function buildSelector(el) {
     const parts = [];
     let node = el;
@@ -60,6 +65,9 @@ function getMarkerContainer() {
     }
     return markerContainer;
 }
+function applyPulse(el, state) {
+    el.classList.toggle('loupe-awaiting-pulse', state === 'user-last' && presenceWorking);
+}
 function updateMarkerStyle(el, count, state) {
     if (state === 'done') {
         el.style.background = '#4b5563';
@@ -85,6 +93,7 @@ function updateMarkerStyle(el, count, state) {
         el.style.border = '2px solid #94a3b8';
         el.textContent = String(count);
     }
+    applyPulse(el, state);
 }
 function makeMarkerEl(threadId, count, state) {
     const el = document.createElement('button');
@@ -116,9 +125,14 @@ function positionMarker(el, selector) {
         el.style.display = 'none';
         return;
     }
+    // Hide when anchor is fully out of the viewport (no clamping).
+    if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) {
+        el.style.display = 'none';
+        return;
+    }
     el.style.display = 'flex';
-    el.style.top = `${Math.max(0, r.top - 11)}px`;
-    el.style.left = `${Math.max(0, r.right - 11)}px`;
+    el.style.top = `${r.top - 11}px`;
+    el.style.left = `${r.right - 11}px`;
 }
 /* ---- overlays ---- */
 function placeOv(ov, el) {
@@ -269,11 +283,12 @@ window.addEventListener('message', (e) => {
         if (markers[d.threadId]) {
             updateMarkerStyle(markers[d.threadId].el, d.count, d.state);
             markers[d.threadId].selector = d.selector;
+            markers[d.threadId].state = d.state;
         }
         else {
             const el = makeMarkerEl(d.threadId, d.count, d.state);
             container.appendChild(el);
-            markers[d.threadId] = { el, selector: d.selector };
+            markers[d.threadId] = { el, selector: d.selector, state: d.state };
         }
     }
     else if (d.type === 'loupe:clear-markers') {
@@ -290,6 +305,11 @@ window.addEventListener('message', (e) => {
     else if (d.type === 'loupe:check-anchors') {
         const results = d.threads.map(t => checkAnchor(t.threadId, t.selector, t.contentSnippet));
         window.parent.postMessage({ type: 'loupe:anchor-report', results }, '*');
+    }
+    else if (d.type === 'loupe:agent-presence') {
+        presenceWorking = d.state === 'working';
+        for (const tid in markers)
+            applyPulse(markers[tid].el, markers[tid].state);
     }
 });
 /* ---- hover ---- */

@@ -4,9 +4,9 @@ Interactive HTML feedback loop for Claude Code agents. The agent opens an HTML f
 
 ## How it works
 
-1. The agent calls `node scripts/cli.js open <file>`. A local HTTP server starts (port 7429 by default, bound to 127.0.0.1). Your browser opens a review shell with the HTML in an iframe.
+1. The agent calls `node dist/cli.js open <file>`. A local HTTP server starts (port 7429 by default, bound to 127.0.0.1). Your browser opens a review shell with the HTML in an iframe.
 2. In the browser: hover to highlight elements, click to select one, select text to capture a quote. Type your feedback in the compose box and hit Send (or Cmd/Ctrl+Enter).
-3. The agent is blocked on `node scripts/cli.js poll <file>`. When you send, the poll returns JSON with your annotations.
+3. The agent is blocked on `node dist/cli.js poll <file>`. When you send, the poll returns JSON with your annotations.
 4. The agent edits the HTML, saves it, the browser reloads automatically, and the loop continues.
 
 ## Install
@@ -36,19 +36,19 @@ bash install.sh
 
 Terminal 1 (agent or you):
 ```bash
-node scripts/cli.js open /path/to/your/file.html
+node dist/cli.js open /path/to/your/file.html
 ```
 
 Terminal 2 (agent or you):
 ```bash
-node scripts/cli.js poll /path/to/your/file.html
+node dist/cli.js poll /path/to/your/file.html
 ```
 
 When you hit Send in the browser, terminal 2 prints the JSON and exits.
 
 To send a reply to the browser before polling again:
 ```bash
-node scripts/cli.js poll /path/to/your/file.html --reply "I've updated the layout."
+node dist/cli.js poll /path/to/your/file.html --reply "I've updated the layout."
 ```
 
 ## Configuration

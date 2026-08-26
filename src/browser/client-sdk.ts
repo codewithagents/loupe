@@ -11,9 +11,14 @@ let selOv: HTMLDivElement | null = null;
 let selectedEl: Element | null = null;
 let composeBox: HTMLDivElement | null = null;
 let markerContainer: HTMLDivElement | null = null;
-let markers: Record<string, { el: HTMLButtonElement; selector: string | null }> = {};
-
 type MarkerState = 'done' | 'agent-last' | 'user-last' | 'drafts-only';
+let markers: Record<string, { el: HTMLButtonElement; selector: string | null; state: MarkerState }> = {};
+let presenceWorking = false;
+
+// Inject pulse keyframe once at module load.
+const _pulseStyle = document.createElement('style');
+_pulseStyle.textContent = '@keyframes loupe-pulse{0%,100%{box-shadow:0 2px 6px rgba(0,0,0,0.35),0 0 0 0 rgba(245,158,11,0.55)}50%{box-shadow:0 2px 6px rgba(0,0,0,0.35),0 0 0 5px rgba(245,158,11,0)}} .loupe-awaiting-pulse{animation:loupe-pulse 1.4s ease-in-out infinite;}';
+document.head.appendChild(_pulseStyle);
 
 function buildSelector(el: Element): string {
   const parts: string[] = [];
@@ -69,6 +74,10 @@ function getMarkerContainer(): HTMLDivElement {
   return markerContainer;
 }
 
+function applyPulse(el: HTMLButtonElement, state: MarkerState): void {
+  el.classList.toggle('loupe-awaiting-pulse', state === 'user-last' && presenceWorking);
+}
+
 function updateMarkerStyle(el: HTMLButtonElement, count: number, state: MarkerState): void {
   if (state === 'done') {
     el.style.background = '#4b5563';
@@ -91,6 +100,7 @@ function updateMarkerStyle(el: HTMLButtonElement, count: number, state: MarkerSt
     el.style.border = '2px solid #94a3b8';
     el.textContent = String(count);
   }
+  applyPulse(el, state);
 }
 
 function makeMarkerEl(threadId: string, count: number, state: MarkerState): HTMLButtonElement {
@@ -115,9 +125,14 @@ function positionMarker(el: HTMLButtonElement, selector: string | null): void {
   if (!target) { el.style.display = 'none'; return; }
   const r = target.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) { el.style.display = 'none'; return; }
+  // Hide when anchor is fully out of the viewport (no clamping).
+  if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) {
+    el.style.display = 'none';
+    return;
+  }
   el.style.display = 'flex';
-  el.style.top = `${Math.max(0, r.top - 11)}px`;
-  el.style.left = `${Math.max(0, r.right - 11)}px`;
+  el.style.top = `${r.top - 11}px`;
+  el.style.left = `${r.right - 11}px`;
 }
 
 /* ---- overlays ---- */
@@ -262,10 +277,11 @@ window.addEventListener('message', (e: MessageEvent) => {
     if (markers[d.threadId]) {
       updateMarkerStyle(markers[d.threadId].el, d.count, d.state);
       markers[d.threadId].selector = d.selector;
+      markers[d.threadId].state = d.state;
     } else {
       const el = makeMarkerEl(d.threadId, d.count, d.state);
       container.appendChild(el);
-      markers[d.threadId] = { el, selector: d.selector };
+      markers[d.threadId] = { el, selector: d.selector, state: d.state };
     }
   } else if (d.type === 'loupe:clear-markers') {
     for (const tid in markers) markers[tid].el.remove();
@@ -275,6 +291,9 @@ window.addEventListener('message', (e: MessageEvent) => {
   } else if (d.type === 'loupe:check-anchors') {
     const results = d.threads.map(t => checkAnchor(t.threadId, t.selector, t.contentSnippet));
     window.parent.postMessage({ type: 'loupe:anchor-report', results }, '*');
+  } else if (d.type === 'loupe:agent-presence') {
+    presenceWorking = d.state === 'working';
+    for (const tid in markers) applyPulse(markers[tid].el, markers[tid].state);
   }
 });
 

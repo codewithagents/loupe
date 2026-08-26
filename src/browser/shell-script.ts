@@ -118,6 +118,7 @@ function updateAgentStatus(state: 'waiting' | 'working'): void {
     agentStatusEl.textContent = 'Agent ready';
     agentStatusEl.style.color = '#22c55e';
   }
+  try { artifactFrame.contentWindow?.postMessage({ type: 'loupe:agent-presence', state }, '*'); } catch (_e) {}
 }
 
 /* ---- pending count / send button ---- */
