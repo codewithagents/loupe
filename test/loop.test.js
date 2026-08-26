@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { writeFile, unlink, mkdtemp, rename } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { createServer, keyFromPath } from '../scripts/server.js';
-import { watchFile } from '../scripts/watch.js';
+import { createServer, keyFromPath } from '../dist/server.js';
+import { watchFile } from '../dist/watch.js';
 
 const TEST_PORT = 17429;
 const BASE = `http://127.0.0.1:${TEST_PORT}`;

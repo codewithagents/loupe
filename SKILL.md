@@ -1,7 +1,7 @@
 ---
 name: loupe
 description: Open an HTML artifact in the user's browser with an interactive annotation layer so they can click elements, select text, and send targeted feedback back to the agent. Triggers when the agent has produced or is about to produce an HTML artifact the user should review interactively: plans, designs, dashboards, reports, or mockups. Also triggers on explicit requests like "review this in loupe" or "open this interactively".
-allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/cli.js *), Read
+allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/dist/cli.js *), Read
 ---
 
 # Loupe
@@ -15,7 +15,7 @@ Interactive HTML review loop. The user clicks elements or selects text in the br
 ### 1. Open the artifact
 
 ```
-node ${CLAUDE_SKILL_DIR}/scripts/cli.js open /absolute/path/to/file.html
+node ${CLAUDE_SKILL_DIR}/dist/cli.js open /absolute/path/to/file.html
 ```
 
 Prints `{"key":"...","url":"..."}`. The browser opens automatically.
@@ -23,7 +23,7 @@ Prints `{"key":"...","url":"..."}`. The browser opens automatically.
 ### 2. Block and wait for annotations
 
 ```
-node ${CLAUDE_SKILL_DIR}/scripts/cli.js poll /absolute/path/to/file.html
+node ${CLAUDE_SKILL_DIR}/dist/cli.js poll /absolute/path/to/file.html
 ```
 
 Blocks until the user clicks **Send** in the browser. Returns JSON:
@@ -62,7 +62,7 @@ Each prompt carries a stable `uid` and a `threadId` (the thread it belongs to). 
 Use `--reply-to <threadId> "text"` to send a reply that appears inside the correct annotation thread in the browser. The `threadId` is the value from the poll response (for a new thread it equals the `uid` of the first prompt). Repeat the flag to reply to multiple threads in one invocation:
 
 ```
-node ${CLAUDE_SKILL_DIR}/scripts/cli.js poll /absolute/path/to/file.html \
+node ${CLAUDE_SKILL_DIR}/dist/cli.js poll /absolute/path/to/file.html \
   --reply-to abc123 "Done, reduced the heading size." \
   --reply-to def456 "Changed the button to blue."
 ```
@@ -72,13 +72,13 @@ This sends the replies first, then blocks for the next round of annotations.
 Legacy broadcast (no thread targeting):
 
 ```
-node ${CLAUDE_SKILL_DIR}/scripts/cli.js poll /absolute/path/to/file.html --reply "All changes applied."
+node ${CLAUDE_SKILL_DIR}/dist/cli.js poll /absolute/path/to/file.html --reply "All changes applied."
 ```
 
 ### Optional: timeout
 
 ```
-node ${CLAUDE_SKILL_DIR}/scripts/cli.js poll /absolute/path/to/file.html --timeout 60
+node ${CLAUDE_SKILL_DIR}/dist/cli.js poll /absolute/path/to/file.html --timeout 60
 ```
 
 Returns after 60 seconds even if no feedback was submitted (prompts array will be empty).

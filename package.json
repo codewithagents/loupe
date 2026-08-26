@@ -3,11 +3,13 @@
   "version": "1.0.1",
   "type": "module",
   "description": "Interactive HTML feedback loop for Claude Code agents",
-  "main": "scripts/cli.js",
+  "main": "dist/cli.js",
   "bin": {
-    "loupe": "scripts/cli.js"
+    "loupe": "dist/cli.js"
   },
   "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.browser.json",
     "test": "node --test test/loop.test.js"
   },
   "license": "MIT",
@@ -15,5 +17,9 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/codewithagents/loupe.git"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "typescript": "^7.0.2"
   }
 }
