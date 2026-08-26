@@ -186,14 +186,35 @@ async function cmdPoll(args: string[]): Promise<void> {
   }
 }
 
+async function cmdAck(args: string[]): Promise<void> {
+  const filePath = args[0];
+  const threadId = args[1];
+  const text = args[2];
+  if (!filePath || !threadId || !text) {
+    console.error('Usage: node cli.js ack <file> <threadId> "text"');
+    process.exit(1);
+  }
+  const absPath = path.resolve(filePath);
+  await ensureServer();
+  const key = keyFromPath(absPath);
+  await fetch(`${BASE}/api/${key}/agent-interim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threadId, text }),
+  });
+  console.log(JSON.stringify({ ok: true }));
+}
+
 const [, , command, ...rest] = process.argv;
 
 if (command === 'open') {
   await cmdOpen(rest);
 } else if (command === 'poll') {
   await cmdPoll(rest);
+} else if (command === 'ack') {
+  await cmdAck(rest);
 } else {
-  console.error('Usage: node cli.js <open|poll> [args...]');
+  console.error('Usage: node cli.js <open|poll|ack> [args...]');
   process.exit(1);
 }
 process.exit(0);

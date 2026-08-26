@@ -269,6 +269,55 @@ test('broadcast reply: stored with __broadcast__ threadId so history restore wor
   await unlink(filePath);
 });
 
+test('agent-interim is transient: does not appear in history; real reply replaces it', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-interim-'));
+  const filePath = path.join(tmpDir, 'interim.html');
+  await writeFile(filePath, '<html><body><p>Interim test</p></body></html>');
+
+  const sessR = await fetch(`${BASE}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: filePath }),
+  });
+  const { key } = await sessR.json();
+
+  await fetch(`${BASE}/api/${key}/prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompts: [{ uid: 'interim-001', threadId: 'interim-001', prompt: 'Check this', selector: 'p', tag: 'note', text: null, target: null }],
+    }),
+  });
+
+  const interimR = await fetch(`${BASE}/api/${key}/agent-interim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threadId: 'interim-001', text: 'On it...' }),
+  });
+  assert.equal(interimR.status, 200);
+  assert.equal((await interimR.json()).ok, true);
+
+  // Interim must NOT persist in history (it is live-only via SSE).
+  const midData = await (await fetch(`${BASE}/api/${key}/history`)).json();
+  const midAgent = midData.history.filter(h => h.role === 'agent');
+  assert.equal(midAgent.length, 0, 'interim must not appear in history');
+
+  // Real reply lands: history has it, no interim entry.
+  await fetch(`${BASE}/api/${key}/agent-reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Done!', targetUid: 'interim-001' }),
+  });
+
+  const afterData = await (await fetch(`${BASE}/api/${key}/history`)).json();
+  const afterAgent = afterData.history.filter(h => h.role === 'agent');
+  assert.equal(afterAgent.length, 1, 'real reply appears in history');
+  assert.equal(afterAgent[0].text, 'Done!');
+  assert.equal(afterAgent[0].threadId, 'interim-001');
+
+  await unlink(filePath);
+});
+
 test('POST /api/:key/reset clears history and queued prompts', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-reset-'));
   const filePath = path.join(tmpDir, 'reset.html');

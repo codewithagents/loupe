@@ -3,6 +3,7 @@ import type {
   HistoryResponse,
   SSEAgentReplyPayload,
   SSEAgentPresencePayload,
+  SSEAgentInterimPayload,
   SdkToShellMessage,
   PmAnchorResult,
 } from '../types.js';
@@ -38,6 +39,8 @@ interface Thread {
   drafts: Draft[];
   done: boolean;
   orphaned: boolean;
+  queued: boolean;
+  interimMsg: { content: string } | null;
 }
 
 interface StoredDraft {
@@ -50,11 +53,13 @@ interface StoredDraft {
 }
 
 type SendMode = 'instant' | 'collect';
-type MarkerStateValue = 'done' | 'agent-last' | 'user-last' | 'drafts-only';
+type MarkerStateValue = 'done' | 'agent-last' | 'interim' | 'queued' | 'user-last' | 'drafts-only';
+type PresenceState = 'polling' | 'working' | 'idle';
 
 const threads: Record<string, Thread> = {};
 let activeThreadId: string | null = null;
 let awaitingReply: Record<string, boolean> = {};
+let presenceState: PresenceState = 'idle';
 let reloadCounter = 0;
 let artifactReady = false;
 let sendMode: SendMode = 'collect';
@@ -79,6 +84,7 @@ const pollLightEl = qs<HTMLElement>('poll-light');
 const pollLightLabel = qs<HTMLElement>('poll-light-label');
 const pollLightWrap = qs<HTMLElement>('poll-light-wrap');
 const responseTimer = qs<HTMLElement>('response-timer');
+const queuedHint = qs<HTMLElement>('queued-hint');
 const modalBackdrop = qs<HTMLDivElement>('modal-backdrop');
 const modalOrphanWarning = qs<HTMLDivElement>('modal-orphan-warning');
 const modalSnippet = qs<HTMLElement>('modal-snippet');
@@ -138,9 +144,8 @@ function stopTimer(): void {
 }
 
 /* ---- poll light ---- */
-type PresenceState = 'polling' | 'working' | 'idle';
-
 function updatePollLight(state: PresenceState, workingSince?: number): void {
+  presenceState = state;
   pollLightEl.setAttribute('data-state', state);
   const labels: Record<PresenceState, string> = {
     polling: 'Agent listening',
@@ -154,9 +159,32 @@ function updatePollLight(state: PresenceState, workingSince?: number): void {
   };
   pollLightLabel.textContent = labels[state];
   pollLightWrap.title = titles[state];
-  if (state === 'working') startTimer(workingSince ?? Date.now());
-  else stopTimer();
+  if (state === 'working') {
+    startTimer(workingSince ?? Date.now());
+    // Agent just picked up all queued prompts - clear the queued flag.
+    for (const tid in threads) {
+      if (threads[tid].queued) {
+        threads[tid].queued = false;
+        applyMarker(tid);
+      }
+    }
+    updateQueuedHint();
+  } else {
+    stopTimer();
+  }
   try { artifactFrame.contentWindow?.postMessage({ type: 'loupe:agent-presence', state }, '*'); } catch (_e) {}
+}
+
+/* ---- queued hint ---- */
+function updateQueuedHint(): void {
+  let n = 0;
+  for (const tid in threads) if (threads[tid].queued) n++;
+  if (n === 0) {
+    queuedHint.style.display = 'none';
+  } else {
+    queuedHint.textContent = `${n} queued · agent busy`;
+    queuedHint.style.display = '';
+  }
 }
 
 /* ---- pending count / send button ---- */
@@ -228,9 +256,11 @@ document.addEventListener('click', () => { orphanList.style.display = 'none'; })
 /* ---- marker state ---- */
 function markerState(t: Thread): MarkerStateValue {
   if (t.done) return 'done';
-  if (t.messages.length > 0) {
-    return t.messages[t.messages.length - 1].role === 'agent' ? 'agent-last' : 'user-last';
-  }
+  const lastRole = t.messages.length > 0 ? t.messages[t.messages.length - 1].role : null;
+  if (lastRole === 'agent') return 'agent-last';
+  if (t.interimMsg) return 'interim';
+  if (t.queued) return 'queued';
+  if (lastRole === 'user') return 'user-last';
   return 'drafts-only';
 }
 
@@ -288,7 +318,7 @@ function loadDrafts(): void {
     const stored: StoredDraft[] = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]');
     for (const d of stored) {
       if (!threads[d.threadId]) {
-        threads[d.threadId] = { threadId: d.threadId, selector: d.selector || null, selText: d.selText || null, contentSnippet: d.contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
+        threads[d.threadId] = { threadId: d.threadId, selector: d.selector || null, selText: d.selText || null, contentSnippet: d.contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
       }
       threads[d.threadId].drafts.push({ uid: d.uid, prompt: d.prompt });
     }
@@ -303,7 +333,7 @@ function restoreHistory(history: HistoryItem[], doneThreadIds: string[]): void {
       const selector = item.role === 'user' ? (item.selector || null) : null;
       const contentSnippet = item.role === 'user' ? (item.contentSnippet || null) : null;
       const selText = item.role === 'user' ? (item.text || null) : null;
-      threads[tid] = { threadId: tid, selector, selText, contentSnippet, messages: [], drafts: [], done: false, orphaned: false };
+      threads[tid] = { threadId: tid, selector, selText, contentSnippet, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
     } else if (!threads[tid].contentSnippet && item.role === 'user' && item.contentSnippet) {
       threads[tid].contentSnippet = item.contentSnippet;
     }
@@ -362,6 +392,19 @@ function renderModal(tid: string): void {
       dBody.textContent = dft.prompt;
       dDiv.appendChild(dBody);
       modalMsgs.appendChild(dDiv);
+    }
+    if (t.interimMsg) {
+      const iDiv = document.createElement('div');
+      iDiv.className = 'msg msg-interim';
+      const iMeta = document.createElement('div');
+      iMeta.className = 'msg-meta';
+      iMeta.textContent = 'Agent (working...)';
+      iDiv.appendChild(iMeta);
+      const iBody = document.createElement('div');
+      iBody.className = 'msg-body';
+      iBody.textContent = t.interimMsg.content;
+      iDiv.appendChild(iBody);
+      modalMsgs.appendChild(iDiv);
     }
   }
   modalMsgs.scrollTop = modalMsgs.scrollHeight;
@@ -444,12 +487,12 @@ function addNoteFromIframe(selector: string | null, noteText: string, contentSni
       if (!threads[targetTid].contentSnippet && contentSnippet) threads[targetTid].contentSnippet = contentSnippet;
     } else {
       targetTid = uid();
-      threads[targetTid] = { threadId: targetTid, selector, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
+      threads[targetTid] = { threadId: targetTid, selector, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
     }
     activeThreadId = targetTid;
   } else {
     targetTid = uid();
-    threads[targetTid] = { threadId: targetTid, selector: null, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
+    threads[targetTid] = { threadId: targetTid, selector: null, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
     activeThreadId = targetTid;
   }
   addDraft(targetTid, noteText);
@@ -496,7 +539,14 @@ function sendAll(): void {
       applyMarker(tid);
     }
     try { localStorage.removeItem(DRAFTS_KEY); } catch (_e) {}
-    for (const stid in sentTids) awaitingReply[stid] = true;
+    for (const stid in sentTids) {
+      awaitingReply[stid] = true;
+      if (presenceState !== 'polling') {
+        threads[stid].queued = true;
+        applyMarker(stid);
+      }
+    }
+    updateQueuedHint();
     statusBar.textContent = 'Sent - waiting for agent...';
     updatePendingCount();
     if (activeThreadId && modalBackdrop.classList.contains('open')) renderModal(activeThreadId);
@@ -561,6 +611,7 @@ function clearClientState(): void {
   if (modalBackdrop.classList.contains('open')) closeModal();
   updatePendingCount();
   updateOrphanBadge();
+  updateQueuedHint();
   stopTimer();
   statusBar.textContent = 'Reset. Ready for new annotations.';
 }
@@ -597,6 +648,7 @@ evtSource.addEventListener('agent-reply', (e: Event) => {
     const data = JSON.parse((e as MessageEvent).data) as SSEAgentReplyPayload;
     const tid = data.threadId;
     if (tid && threads[tid]) {
+      threads[tid].interimMsg = null;
       threads[tid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
       applyMarker(tid);
       delete awaitingReply[tid];
@@ -605,7 +657,7 @@ evtSource.addEventListener('agent-reply', (e: Event) => {
     } else {
       const btid = '__broadcast__';
       if (!threads[btid]) {
-        threads[btid] = { threadId: btid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false, orphaned: false };
+        threads[btid] = { threadId: btid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
       }
       threads[btid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
       if (activeThreadId === btid && modalBackdrop.classList.contains('open')) renderModal(btid);
@@ -618,6 +670,18 @@ evtSource.addEventListener('agent-presence', (e: Event) => {
   try {
     const data = JSON.parse((e as MessageEvent).data) as SSEAgentPresencePayload;
     updatePollLight(data.state, data.workingSince);
+  } catch (_err) {}
+});
+
+evtSource.addEventListener('agent-interim', (e: Event) => {
+  try {
+    const data = JSON.parse((e as MessageEvent).data) as SSEAgentInterimPayload;
+    const tid = data.threadId;
+    if (tid && threads[tid]) {
+      threads[tid].interimMsg = { content: data.text };
+      applyMarker(tid);
+      if (activeThreadId === tid && modalBackdrop.classList.contains('open')) renderModal(tid);
+    }
   } catch (_err) {}
 });
 

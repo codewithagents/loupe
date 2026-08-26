@@ -430,6 +430,24 @@ export function createServer(port) {
                 res.end(JSON.stringify({ ok: true }));
                 return;
             }
+            // POST /api/:key/agent-interim
+            const interimMatch = pathname.match(/^\/api\/([a-f0-9]{16})\/agent-interim$/);
+            if (method === 'POST' && interimMatch) {
+                const key = interimMatch[1];
+                const body = await parseBody(req);
+                const session = getSession(key);
+                if (!session)
+                    return notFound(res);
+                const threadId = body.threadId ?? '';
+                const text = body.text ?? '';
+                for (const [conn, connKey] of sseConnections) {
+                    if (connKey === key)
+                        sendSSE(conn, 'agent-interim', { threadId, text });
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true }));
+                return;
+            }
             // POST /api/:key/reset
             const resetMatch = pathname.match(/^\/api\/([a-f0-9]{16})\/reset$/);
             if (method === 'POST' && resetMatch) {

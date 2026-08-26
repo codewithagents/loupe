@@ -115,6 +115,23 @@ After applying changes and replying, re-poll right away (background again). Neve
 3. Re-poll with `--reply-to` for each thread (the file save triggers a browser reload automatically).
 4. Go to step 1.
 
+### Acknowledge before long work
+
+When you pick up a thread whose work will take more than a moment, post a quick interim ack FIRST so the user sees a response immediately. The interim appears in the thread and is automatically replaced when your real reply arrives.
+
+```
+node ${CLAUDE_SKILL_DIR}/dist/cli.js ack /path/to/file.html <threadId> "On it, refactoring the layout now..."
+```
+
+Then do the work, then reply for real:
+
+```
+node ${CLAUDE_SKILL_DIR}/dist/cli.js poll /path/to/file.html \
+  --reply-to <threadId> "Done - moved the nav to a sticky sidebar."
+```
+
+The poll call replaces the interim with the real answer. Only ack when there will be a real wait (multi-step edits, analysis). Skip it for trivial or instant replies.
+
 ### What the user sees (status light in the top bar)
 
 | Colour | Meaning |

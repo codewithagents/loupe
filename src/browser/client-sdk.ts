@@ -11,7 +11,7 @@ let selOv: HTMLDivElement | null = null;
 let selectedEl: Element | null = null;
 let composeBox: HTMLDivElement | null = null;
 let markerContainer: HTMLDivElement | null = null;
-type MarkerState = 'done' | 'agent-last' | 'user-last' | 'drafts-only';
+type MarkerState = 'done' | 'agent-last' | 'interim' | 'queued' | 'user-last' | 'drafts-only';
 let markers: Record<string, { el: HTMLButtonElement; selector: string | null; state: MarkerState }> = {};
 let presenceWorking = false;
 
@@ -88,6 +88,16 @@ function updateMarkerStyle(el: HTMLButtonElement, count: number, state: MarkerSt
     el.style.background = '#3b82f6';
     el.style.color = '#fff';
     el.style.border = '2px solid rgba(0,0,0,0.15)';
+    el.textContent = String(count);
+  } else if (state === 'interim') {
+    el.style.background = '#1e3a5f';
+    el.style.color = '#93c5fd';
+    el.style.border = '2px dashed #3b82f6';
+    el.textContent = '…';
+  } else if (state === 'queued') {
+    el.style.background = 'transparent';
+    el.style.color = '#f59e0b';
+    el.style.border = '2px dashed #f59e0b';
     el.textContent = String(count);
   } else if (state === 'user-last') {
     el.style.background = '#f59e0b';

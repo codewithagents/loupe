@@ -109,6 +109,11 @@ export interface SSEAgentPresencePayload {
   workingSince?: number;
 }
 
+export interface SSEAgentInterimPayload {
+  threadId: string;
+  text: string;
+}
+
 // ---- postMessage types (iframe SDK ↔ shell) ----
 
 export interface PmElement {
@@ -144,7 +149,7 @@ export interface PmAddMarker {
   threadId: string;
   selector: string;
   count: number;
-  state: 'done' | 'agent-last' | 'user-last' | 'drafts-only';
+  state: 'done' | 'agent-last' | 'interim' | 'queued' | 'user-last' | 'drafts-only';
 }
 
 export interface PmClearMarkers {

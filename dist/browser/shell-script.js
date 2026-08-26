@@ -5,6 +5,7 @@ const MODE_KEY = 'loupe:send-mode';
 const threads = {};
 let activeThreadId = null;
 let awaitingReply = {};
+let presenceState = 'idle';
 let reloadCounter = 0;
 let artifactReady = false;
 let sendMode = 'collect';
@@ -28,6 +29,7 @@ const pollLightEl = qs('poll-light');
 const pollLightLabel = qs('poll-light-label');
 const pollLightWrap = qs('poll-light-wrap');
 const responseTimer = qs('response-timer');
+const queuedHint = qs('queued-hint');
 const modalBackdrop = qs('modal-backdrop');
 const modalOrphanWarning = qs('modal-orphan-warning');
 const modalSnippet = qs('modal-snippet');
@@ -88,7 +90,9 @@ function stopTimer() {
     waitSince = null;
     responseTimer.style.display = 'none';
 }
+/* ---- poll light ---- */
 function updatePollLight(state, workingSince) {
+    presenceState = state;
     pollLightEl.setAttribute('data-state', state);
     const labels = {
         polling: 'Agent listening',
@@ -102,14 +106,38 @@ function updatePollLight(state, workingSince) {
     };
     pollLightLabel.textContent = labels[state];
     pollLightWrap.title = titles[state];
-    if (state === 'working')
+    if (state === 'working') {
         startTimer(workingSince ?? Date.now());
-    else
+        // Agent just picked up all queued prompts - clear the queued flag.
+        for (const tid in threads) {
+            if (threads[tid].queued) {
+                threads[tid].queued = false;
+                applyMarker(tid);
+            }
+        }
+        updateQueuedHint();
+    }
+    else {
         stopTimer();
+    }
     try {
         artifactFrame.contentWindow?.postMessage({ type: 'loupe:agent-presence', state }, '*');
     }
     catch (_e) { }
+}
+/* ---- queued hint ---- */
+function updateQueuedHint() {
+    let n = 0;
+    for (const tid in threads)
+        if (threads[tid].queued)
+            n++;
+    if (n === 0) {
+        queuedHint.style.display = 'none';
+    }
+    else {
+        queuedHint.textContent = `${n} queued · agent busy`;
+        queuedHint.style.display = '';
+    }
 }
 /* ---- pending count / send button ---- */
 function totalDrafts() {
@@ -180,9 +208,15 @@ document.addEventListener('click', () => { orphanList.style.display = 'none'; })
 function markerState(t) {
     if (t.done)
         return 'done';
-    if (t.messages.length > 0) {
-        return t.messages[t.messages.length - 1].role === 'agent' ? 'agent-last' : 'user-last';
-    }
+    const lastRole = t.messages.length > 0 ? t.messages[t.messages.length - 1].role : null;
+    if (lastRole === 'agent')
+        return 'agent-last';
+    if (t.interimMsg)
+        return 'interim';
+    if (t.queued)
+        return 'queued';
+    if (lastRole === 'user')
+        return 'user-last';
     return 'drafts-only';
 }
 /* ---- markers ---- */
@@ -244,7 +278,7 @@ function loadDrafts() {
         const stored = JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]');
         for (const d of stored) {
             if (!threads[d.threadId]) {
-                threads[d.threadId] = { threadId: d.threadId, selector: d.selector || null, selText: d.selText || null, contentSnippet: d.contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
+                threads[d.threadId] = { threadId: d.threadId, selector: d.selector || null, selText: d.selText || null, contentSnippet: d.contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
             }
             threads[d.threadId].drafts.push({ uid: d.uid, prompt: d.prompt });
         }
@@ -259,7 +293,7 @@ function restoreHistory(history, doneThreadIds) {
             const selector = item.role === 'user' ? (item.selector || null) : null;
             const contentSnippet = item.role === 'user' ? (item.contentSnippet || null) : null;
             const selText = item.role === 'user' ? (item.text || null) : null;
-            threads[tid] = { threadId: tid, selector, selText, contentSnippet, messages: [], drafts: [], done: false, orphaned: false };
+            threads[tid] = { threadId: tid, selector, selText, contentSnippet, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
         }
         else if (!threads[tid].contentSnippet && item.role === 'user' && item.contentSnippet) {
             threads[tid].contentSnippet = item.contentSnippet;
@@ -319,6 +353,19 @@ function renderModal(tid) {
             dBody.textContent = dft.prompt;
             dDiv.appendChild(dBody);
             modalMsgs.appendChild(dDiv);
+        }
+        if (t.interimMsg) {
+            const iDiv = document.createElement('div');
+            iDiv.className = 'msg msg-interim';
+            const iMeta = document.createElement('div');
+            iMeta.className = 'msg-meta';
+            iMeta.textContent = 'Agent (working...)';
+            iDiv.appendChild(iMeta);
+            const iBody = document.createElement('div');
+            iBody.className = 'msg-body';
+            iBody.textContent = t.interimMsg.content;
+            iDiv.appendChild(iBody);
+            modalMsgs.appendChild(iDiv);
         }
     }
     modalMsgs.scrollTop = modalMsgs.scrollHeight;
@@ -409,13 +456,13 @@ function addNoteFromIframe(selector, noteText, contentSnippet) {
         }
         else {
             targetTid = uid();
-            threads[targetTid] = { threadId: targetTid, selector, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
+            threads[targetTid] = { threadId: targetTid, selector, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
         }
         activeThreadId = targetTid;
     }
     else {
         targetTid = uid();
-        threads[targetTid] = { threadId: targetTid, selector: null, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false };
+        threads[targetTid] = { threadId: targetTid, selector: null, selText: null, contentSnippet: contentSnippet || null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
         activeThreadId = targetTid;
     }
     addDraft(targetTid, noteText);
@@ -466,8 +513,14 @@ function sendAll() {
             localStorage.removeItem(DRAFTS_KEY);
         }
         catch (_e) { }
-        for (const stid in sentTids)
+        for (const stid in sentTids) {
             awaitingReply[stid] = true;
+            if (presenceState !== 'polling') {
+                threads[stid].queued = true;
+                applyMarker(stid);
+            }
+        }
+        updateQueuedHint();
         statusBar.textContent = 'Sent - waiting for agent...';
         updatePendingCount();
         if (activeThreadId && modalBackdrop.classList.contains('open'))
@@ -553,6 +606,7 @@ function clearClientState() {
         closeModal();
     updatePendingCount();
     updateOrphanBadge();
+    updateQueuedHint();
     stopTimer();
     statusBar.textContent = 'Reset. Ready for new annotations.';
 }
@@ -586,6 +640,7 @@ evtSource.addEventListener('agent-reply', (e) => {
         const data = JSON.parse(e.data);
         const tid = data.threadId;
         if (tid && threads[tid]) {
+            threads[tid].interimMsg = null;
             threads[tid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
             applyMarker(tid);
             delete awaitingReply[tid];
@@ -599,7 +654,7 @@ evtSource.addEventListener('agent-reply', (e) => {
         else {
             const btid = '__broadcast__';
             if (!threads[btid]) {
-                threads[btid] = { threadId: btid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false, orphaned: false };
+                threads[btid] = { threadId: btid, selector: null, selText: null, contentSnippet: null, messages: [], drafts: [], done: false, orphaned: false, queued: false, interimMsg: null };
             }
             threads[btid].messages.push({ role: 'agent', uid: data.uid || uid(), content: data.text });
             if (activeThreadId === btid && modalBackdrop.classList.contains('open'))
@@ -614,6 +669,19 @@ evtSource.addEventListener('agent-presence', (e) => {
     try {
         const data = JSON.parse(e.data);
         updatePollLight(data.state, data.workingSince);
+    }
+    catch (_err) { }
+});
+evtSource.addEventListener('agent-interim', (e) => {
+    try {
+        const data = JSON.parse(e.data);
+        const tid = data.threadId;
+        if (tid && threads[tid]) {
+            threads[tid].interimMsg = { content: data.text };
+            applyMarker(tid);
+            if (activeThreadId === tid && modalBackdrop.classList.contains('open'))
+                renderModal(tid);
+        }
     }
     catch (_err) { }
 });

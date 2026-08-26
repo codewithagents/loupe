@@ -22,6 +22,7 @@ export function renderShell(key, port, version) {
   #poll-light[data-state="polling"] { background: #22c55e; }
   #poll-light[data-state="working"] { background: #f59e0b; }
   #response-timer { font-size: 12px; color: #60a5fa; white-space: nowrap; display: none; font-variant-numeric: tabular-nums; }
+  #queued-hint { font-size: 12px; color: #f59e0b; white-space: nowrap; display: none; }
   #orphan-wrap { position: relative; }
   #orphan-btn { background: #b45309; color: #fef3c7; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; display: none; }
   #orphan-btn:hover { background: #92400e; }
@@ -71,6 +72,7 @@ export function renderShell(key, port, version) {
   .msg-user { background: #0f172a; border: 1px solid #334155; }
   .msg-agent { background: #1d4ed8; border: 1px solid #2563eb; }
   .msg-draft { background: #0f172a; border: 1px dashed #f59e0b; opacity: 0.85; }
+  .msg-interim { background: #0f172a; border: 1px dashed #3b82f6; opacity: 0.7; font-style: italic; }
   .msg-meta { font-size: 10px; color: #64748b; margin-bottom: 3px; }
   .msg-body { word-break: break-word; }
   .msg-draft-label { font-size: 10px; color: #f59e0b; margin-bottom: 3px; }
@@ -96,6 +98,7 @@ export function renderShell(key, port, version) {
     <span id="poll-light-label">Not polling</span>
   </span>
   <span id="response-timer"></span>
+  <span id="queued-hint"></span>
   <span id="orphan-wrap">
     <button id="orphan-btn">&#x26A0; Orphaned (0)</button>
     <div id="orphan-list"></div>
