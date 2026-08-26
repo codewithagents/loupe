@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { injectScript } from './html-inject.js';
 import { renderShell } from './shell.js';
 import { watchFile } from './watch.js';
-import { getOrCreateSession, getSession, takePrompts, restorePrompts, appendPrompts, appendReply, resolveThread, getHistory, toggleDone, emitFeedback, onFeedback, offFeedback, } from './store.js';
+import { getOrCreateSession, getSession, takePrompts, restorePrompts, appendPrompts, appendReply, resolveThread, getHistory, toggleDone, resetSession, emitFeedback, onFeedback, offFeedback, } from './store.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let packageVersion = '1.0.0';
 try {
@@ -426,6 +426,26 @@ export function createServer(port) {
                         sendSSE(conn, 'agent-reply', payload);
                 }
                 touchLiveness(key);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true }));
+                return;
+            }
+            // POST /api/:key/reset
+            const resetMatch = pathname.match(/^\/api\/([a-f0-9]{16})\/reset$/);
+            if (method === 'POST' && resetMatch) {
+                const key = resetMatch[1];
+                const session = getSession(key);
+                if (!session)
+                    return notFound(res);
+                await resetSession(key);
+                try {
+                    await fs.unlink(stateFilePath(key));
+                }
+                catch { /* file may not exist */ }
+                for (const [conn, connKey] of sseConnections) {
+                    if (connKey === key)
+                        sendSSE(conn, 'reset', {});
+                }
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ ok: true }));
                 return;

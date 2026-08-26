@@ -96,6 +96,16 @@ export async function toggleDone(key, threadId) {
         }
     });
 }
+export async function resetSession(key) {
+    return mutex.run(() => {
+        const session = sessions.get(key);
+        if (!session)
+            return;
+        session.history = [];
+        session.prompts = [];
+        session.doneThreads = new Set();
+    });
+}
 export function emitFeedback(key) {
     emitter.emit(`feedback:${key}`);
 }

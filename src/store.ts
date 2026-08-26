@@ -107,6 +107,16 @@ export async function toggleDone(key: string, threadId: string): Promise<DoneTog
   });
 }
 
+export async function resetSession(key: string): Promise<void> {
+  return mutex.run(() => {
+    const session = sessions.get(key);
+    if (!session) return;
+    session.history = [];
+    session.prompts = [];
+    session.doneThreads = new Set();
+  });
+}
+
 export function emitFeedback(key: string): void {
   emitter.emit(`feedback:${key}`);
 }

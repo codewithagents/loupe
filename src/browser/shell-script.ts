@@ -90,6 +90,10 @@ const modalInput = qs<HTMLTextAreaElement>('modal-input');
 const modalHint = qs<HTMLElement>('modal-hint');
 const modeInstantBtn = qs<HTMLButtonElement>('mode-instant-btn');
 const modeCollectBtn = qs<HTMLButtonElement>('mode-collect-btn');
+const resetBtn = qs<HTMLButtonElement>('reset-btn');
+const resetConfirm = qs<HTMLElement>('reset-confirm');
+const resetYesBtn = qs<HTMLButtonElement>('reset-yes-btn');
+const resetNoBtn = qs<HTMLButtonElement>('reset-no-btn');
 
 /* ---- uid ---- */
 function uid(): string {
@@ -533,6 +537,42 @@ window.addEventListener('message', (e: MessageEvent) => {
   }
 });
 
+/* ---- reset ---- */
+let resetConfirmTimeout: number | null = null;
+
+function showResetConfirm(): void {
+  resetBtn.style.display = 'none';
+  resetConfirm.classList.add('visible');
+  if (resetConfirmTimeout !== null) clearTimeout(resetConfirmTimeout);
+  resetConfirmTimeout = window.setTimeout(hideResetConfirm, 5000);
+}
+
+function hideResetConfirm(): void {
+  if (resetConfirmTimeout !== null) { clearTimeout(resetConfirmTimeout); resetConfirmTimeout = null; }
+  resetConfirm.classList.remove('visible');
+  resetBtn.style.display = '';
+}
+
+function clearClientState(): void {
+  for (const k of Object.keys(threads)) delete threads[k];
+  awaitingReply = {};
+  try { localStorage.removeItem(DRAFTS_KEY); } catch (_e) {}
+  try { artifactFrame.contentWindow?.postMessage({ type: 'loupe:clear-markers' }, '*'); } catch (_e) {}
+  if (modalBackdrop.classList.contains('open')) closeModal();
+  updatePendingCount();
+  updateOrphanBadge();
+  stopTimer();
+  statusBar.textContent = 'Reset. Ready for new annotations.';
+}
+
+resetBtn.addEventListener('click', showResetConfirm);
+resetNoBtn.addEventListener('click', hideResetConfirm);
+resetYesBtn.addEventListener('click', () => {
+  hideResetConfirm();
+  fetch(`${API}/reset`, { method: 'POST' }).catch(() => {});
+  clearClientState();
+});
+
 /* ---- SSE ---- */
 const evtSource = new EventSource('/events/' + KEY);
 
@@ -579,6 +619,10 @@ evtSource.addEventListener('agent-presence', (e: Event) => {
     const data = JSON.parse((e as MessageEvent).data) as SSEAgentPresencePayload;
     updatePollLight(data.state, data.workingSince);
   } catch (_err) {}
+});
+
+evtSource.addEventListener('reset', () => {
+  clearClientState();
 });
 
 evtSource.onopen = () => { statusBar.textContent = 'Connected'; };

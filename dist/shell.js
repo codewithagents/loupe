@@ -35,6 +35,14 @@ export function renderShell(key, port, version) {
   #send-btn:hover:not(:disabled) { background: #2563eb; }
   #send-btn:disabled { background: #334155; color: #64748b; cursor: default; }
   #send-btn.has-pending { background: #2563eb; animation: loupe-pulse 2s infinite; }
+  #reset-btn { background: transparent; color: #64748b; border: 1px solid #334155; border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  #reset-btn:hover { color: #f87171; border-color: #7f1d1d; }
+  #reset-confirm { display: none; align-items: center; gap: 6px; font-size: 12px; color: #fca5a5; white-space: nowrap; }
+  #reset-confirm.visible { display: flex; }
+  #reset-yes-btn { background: #7f1d1d; color: #fecaca; border: 1px solid #b91c1c; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+  #reset-yes-btn:hover { background: #991b1b; }
+  #reset-no-btn { background: transparent; color: #64748b; border: 1px solid #334155; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+  #reset-no-btn:hover { color: #e2e8f0; }
   #artifact-wrap { flex: 1; min-height: 0; }
   #artifact-frame { width: 100%; height: 100%; border: none; background: white; display: block; }
   #status-bar { padding: 3px 12px; font-size: 11px; color: #64748b; background: #0f172a; border-top: 1px solid #334155; flex-shrink: 0; }
@@ -92,6 +100,8 @@ export function renderShell(key, port, version) {
     <button id="orphan-btn">&#x26A0; Orphaned (0)</button>
     <div id="orphan-list"></div>
   </span>
+  <button id="reset-btn" title="Remove all comments and start fresh">Reset</button>
+  <span id="reset-confirm">Remove all comments? <button id="reset-yes-btn">Yes, reset</button><button id="reset-no-btn">Cancel</button></span>
   <button id="send-btn" disabled>Send (&#x2318;&#x21B5;)</button>
 </div>
 <div id="artifact-wrap">

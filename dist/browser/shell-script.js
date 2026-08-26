@@ -39,6 +39,10 @@ const modalInput = qs('modal-input');
 const modalHint = qs('modal-hint');
 const modeInstantBtn = qs('mode-instant-btn');
 const modeCollectBtn = qs('mode-collect-btn');
+const resetBtn = qs('reset-btn');
+const resetConfirm = qs('reset-confirm');
+const resetYesBtn = qs('reset-yes-btn');
+const resetNoBtn = qs('reset-no-btn');
 /* ---- uid ---- */
 function uid() {
     return (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -516,6 +520,49 @@ window.addEventListener('message', (e) => {
             renderModal(activeThreadId);
     }
 });
+/* ---- reset ---- */
+let resetConfirmTimeout = null;
+function showResetConfirm() {
+    resetBtn.style.display = 'none';
+    resetConfirm.classList.add('visible');
+    if (resetConfirmTimeout !== null)
+        clearTimeout(resetConfirmTimeout);
+    resetConfirmTimeout = window.setTimeout(hideResetConfirm, 5000);
+}
+function hideResetConfirm() {
+    if (resetConfirmTimeout !== null) {
+        clearTimeout(resetConfirmTimeout);
+        resetConfirmTimeout = null;
+    }
+    resetConfirm.classList.remove('visible');
+    resetBtn.style.display = '';
+}
+function clearClientState() {
+    for (const k of Object.keys(threads))
+        delete threads[k];
+    awaitingReply = {};
+    try {
+        localStorage.removeItem(DRAFTS_KEY);
+    }
+    catch (_e) { }
+    try {
+        artifactFrame.contentWindow?.postMessage({ type: 'loupe:clear-markers' }, '*');
+    }
+    catch (_e) { }
+    if (modalBackdrop.classList.contains('open'))
+        closeModal();
+    updatePendingCount();
+    updateOrphanBadge();
+    stopTimer();
+    statusBar.textContent = 'Reset. Ready for new annotations.';
+}
+resetBtn.addEventListener('click', showResetConfirm);
+resetNoBtn.addEventListener('click', hideResetConfirm);
+resetYesBtn.addEventListener('click', () => {
+    hideResetConfirm();
+    fetch(`${API}/reset`, { method: 'POST' }).catch(() => { });
+    clearClientState();
+});
 /* ---- SSE ---- */
 const evtSource = new EventSource('/events/' + KEY);
 evtSource.addEventListener('reload', () => {
@@ -569,6 +616,9 @@ evtSource.addEventListener('agent-presence', (e) => {
         updatePollLight(data.state, data.workingSince);
     }
     catch (_err) { }
+});
+evtSource.addEventListener('reset', () => {
+    clearClientState();
 });
 evtSource.onopen = () => { statusBar.textContent = 'Connected'; };
 evtSource.onerror = () => { statusBar.textContent = 'Reconnecting...'; };

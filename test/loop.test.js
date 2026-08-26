@@ -269,6 +269,47 @@ test('broadcast reply: stored with __broadcast__ threadId so history restore wor
   await unlink(filePath);
 });
 
+test('POST /api/:key/reset clears history and queued prompts', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-reset-'));
+  const filePath = path.join(tmpDir, 'reset.html');
+  await writeFile(filePath, '<html><body><p>Reset test</p></body></html>');
+
+  const sessR = await fetch(`${BASE}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: filePath }),
+  });
+  const { key } = await sessR.json();
+
+  await fetch(`${BASE}/api/${key}/prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompts: [{ uid: 'reset-001', threadId: 'reset-001', prompt: 'Fix this', selector: 'p', tag: 'note', text: null, target: null }],
+    }),
+  });
+
+  await fetch(`${BASE}/api/${key}/agent-reply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'Fixed.', targetUid: 'reset-001' }),
+  });
+
+  const beforeData = await (await fetch(`${BASE}/api/${key}/history`)).json();
+  assert.ok(beforeData.history.length > 0, 'history non-empty before reset');
+
+  const resetR = await fetch(`${BASE}/api/${key}/reset`, { method: 'POST' });
+  assert.equal(resetR.status, 200);
+  const resetData = await resetR.json();
+  assert.equal(resetData.ok, true);
+
+  const afterData = await (await fetch(`${BASE}/api/${key}/history`)).json();
+  assert.equal(afterData.history.length, 0, 'history empty after reset');
+  assert.equal(afterData.doneThreadIds.length, 0, 'doneThreadIds empty after reset');
+
+  await unlink(filePath);
+});
+
 test('watcher: detects file change after atomic inode replacement (write-temp-rename)', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'loupe-watch-'));
   const filePath = path.join(tmpDir, 'watched.html');
