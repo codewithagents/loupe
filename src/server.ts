@@ -88,16 +88,20 @@ function saveSessionState(key: string): void {
 const sseConnections = new Map<http.ServerResponse, string>();
 const fileWatchers = new Map<string, () => void>();
 const activePollCounts = new Map<string, number>();
-const lastPresenceState = new Map<string, 'polling' | 'working' | 'idle'>();
+type PresencePayload = { state: 'polling' | 'working' | 'idle'; workingSince?: number };
+const lastPresencePayload = new Map<string, PresencePayload>();
 
 function sendSSE(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 function broadcastPresence(key: string, state: 'polling' | 'working' | 'idle'): void {
-  lastPresenceState.set(key, state);
+  const payload: PresencePayload = state === 'working'
+    ? { state, workingSince: Date.now() }
+    : { state };
+  lastPresencePayload.set(key, payload);
   for (const [conn, connKey] of sseConnections) {
-    if (connKey === key) sendSSE(conn, 'agent-presence', { state });
+    if (connKey === key) sendSSE(conn, 'agent-presence', payload);
   }
 }
 
@@ -240,9 +244,10 @@ export function createServer(port: number): http.Server {
         res.write('retry: 3000\n\n');
 
         // Immediately emit the last known presence state so the light is
-        // correct on page load / refresh.
-        const knownState = lastPresenceState.get(key);
-        if (knownState) sendSSE(res, 'agent-presence', { state: knownState });
+        // correct on page load / refresh. workingSince is included so the
+        // timer can show correct elapsed time after a page refresh.
+        const knownPayload = lastPresencePayload.get(key);
+        if (knownPayload) sendSSE(res, 'agent-presence', knownPayload);
 
         const pingInterval = setInterval(() => {
           if (!res.writableEnded) res.write(': ping\n\n');

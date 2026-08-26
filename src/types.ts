@@ -106,6 +106,7 @@ export interface SSEAgentReplyPayload {
 
 export interface SSEAgentPresencePayload {
   state: 'polling' | 'working' | 'idle';
+  workingSince?: number;
 }
 
 // ---- postMessage types (iframe SDK ↔ shell) ----

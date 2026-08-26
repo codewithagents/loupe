@@ -67,15 +67,18 @@ function saveSessionState(key) {
 const sseConnections = new Map();
 const fileWatchers = new Map();
 const activePollCounts = new Map();
-const lastPresenceState = new Map();
+const lastPresencePayload = new Map();
 function sendSSE(res, event, data) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 function broadcastPresence(key, state) {
-    lastPresenceState.set(key, state);
+    const payload = state === 'working'
+        ? { state, workingSince: Date.now() }
+        : { state };
+    lastPresencePayload.set(key, payload);
     for (const [conn, connKey] of sseConnections) {
         if (connKey === key)
-            sendSSE(conn, 'agent-presence', { state });
+            sendSSE(conn, 'agent-presence', payload);
     }
 }
 function parseBody(req) {
@@ -205,10 +208,11 @@ export function createServer(port) {
                 });
                 res.write('retry: 3000\n\n');
                 // Immediately emit the last known presence state so the light is
-                // correct on page load / refresh.
-                const knownState = lastPresenceState.get(key);
-                if (knownState)
-                    sendSSE(res, 'agent-presence', { state: knownState });
+                // correct on page load / refresh. workingSince is included so the
+                // timer can show correct elapsed time after a page refresh.
+                const knownPayload = lastPresencePayload.get(key);
+                if (knownPayload)
+                    sendSSE(res, 'agent-presence', knownPayload);
                 const pingInterval = setInterval(() => {
                     if (!res.writableEnded)
                         res.write(': ping\n\n');

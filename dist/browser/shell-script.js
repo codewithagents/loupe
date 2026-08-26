@@ -62,18 +62,19 @@ function setMode(mode) {
 modeInstantBtn.addEventListener('click', () => setMode('instant'));
 modeCollectBtn.addEventListener('click', () => setMode('collect'));
 /* ---- response timer ---- */
-function startTimer() {
-    waitSince = Date.now();
+function startTimer(since = Date.now()) {
+    waitSince = since;
     if (timerInterval !== null)
         clearInterval(timerInterval);
-    responseTimer.textContent = 'waiting 0s';
-    responseTimer.style.display = '';
-    timerInterval = window.setInterval(() => {
+    const tick = () => {
         if (waitSince === null)
             return;
         const secs = Math.round((Date.now() - waitSince) / 1000);
         responseTimer.textContent = `waiting ${secs}s`;
-    }, 1000);
+        responseTimer.style.display = '';
+    };
+    tick();
+    timerInterval = window.setInterval(tick, 1000);
 }
 function stopTimer() {
     if (timerInterval !== null) {
@@ -83,7 +84,7 @@ function stopTimer() {
     waitSince = null;
     responseTimer.style.display = 'none';
 }
-function updatePollLight(state) {
+function updatePollLight(state, workingSince) {
     pollLightEl.setAttribute('data-state', state);
     const labels = {
         polling: 'Agent listening',
@@ -97,7 +98,9 @@ function updatePollLight(state) {
     };
     pollLightLabel.textContent = labels[state];
     pollLightWrap.title = titles[state];
-    if (state === 'polling')
+    if (state === 'working')
+        startTimer(workingSince ?? Date.now());
+    else
         stopTimer();
     try {
         artifactFrame.contentWindow?.postMessage({ type: 'loupe:agent-presence', state }, '*');
@@ -462,7 +465,6 @@ function sendAll() {
         for (const stid in sentTids)
             awaitingReply[stid] = true;
         statusBar.textContent = 'Sent - waiting for agent...';
-        startTimer();
         updatePendingCount();
         if (activeThreadId && modalBackdrop.classList.contains('open'))
             renderModal(activeThreadId);
@@ -564,7 +566,7 @@ evtSource.addEventListener('agent-reply', (e) => {
 evtSource.addEventListener('agent-presence', (e) => {
     try {
         const data = JSON.parse(e.data);
-        updatePollLight(data.state);
+        updatePollLight(data.state, data.workingSince);
     }
     catch (_err) { }
 });
