@@ -7,6 +7,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { injectScript } from './html-inject.js';
 import { renderShell } from './shell.js';
+import { renderMarkdown, wrapMarkdown } from './md.js';
 import { watchFile } from './watch.js';
 import { getOrCreateSession, getSession, takePrompts, restorePrompts, appendPrompts, appendReply, resolveThread, getHistory, toggleDone, resetSession, emitFeedback, onFeedback, offFeedback, } from './store.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -202,10 +203,24 @@ export function createServer(port) {
                 const session = getSession(key);
                 if (!session)
                     return notFound(res);
-                const html = await fs.readFile(session.filePath, 'utf8');
-                const injected = injectScript(html, `<script type="module" src="/sdk.js?key=${key}"></script>`);
-                res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end(injected);
+                const ext = path.extname(session.filePath).toLowerCase();
+                const isMd = ext === '.md' || ext === '.markdown';
+                const sdkScript = `<script type="module" src="/sdk.js?key=${key}"></script>`;
+                if (isMd) {
+                    const mdSource = await fs.readFile(session.filePath, 'utf8');
+                    const body = renderMarkdown(mdSource);
+                    const title = path.basename(session.filePath, ext);
+                    const html = wrapMarkdown(body, title);
+                    const injected = injectScript(html, sdkScript);
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.end(injected);
+                }
+                else {
+                    const html = await fs.readFile(session.filePath, 'utf8');
+                    const injected = injectScript(html, sdkScript);
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.end(injected);
+                }
                 return;
             }
             // GET /sdk.js?key=KEY

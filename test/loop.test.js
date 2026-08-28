@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createServer, keyFromPath } from '../dist/server.js';
 import { watchFile } from '../dist/watch.js';
+import { renderMarkdown } from '../dist/md.js';
 
 const TEST_PORT = 17429;
 const BASE = `http://127.0.0.1:${TEST_PORT}`;
@@ -384,4 +385,78 @@ test('watcher: detects file change after atomic inode replacement (write-temp-re
 
 test('teardown: close server', async () => {
   await new Promise((resolve) => server.close(resolve));
+});
+
+// renderMarkdown unit tests (no server needed)
+
+test('renderMarkdown: headings h1-h6', () => {
+  assert.match(renderMarkdown('# Hello'), /<h1>Hello<\/h1>/);
+  assert.match(renderMarkdown('## Hi'), /<h2>Hi<\/h2>/);
+  assert.match(renderMarkdown('###### Deep'), /<h6>Deep<\/h6>/);
+});
+
+test('renderMarkdown: bold ** and __', () => {
+  assert.match(renderMarkdown('**bold**'), /<strong>bold<\/strong>/);
+  assert.match(renderMarkdown('__bold__'), /<strong>bold<\/strong>/);
+});
+
+test('renderMarkdown: italic * and _', () => {
+  assert.match(renderMarkdown('*italic*'), /<em>italic<\/em>/);
+  assert.match(renderMarkdown('_italic_'), /<em>italic<\/em>/);
+});
+
+test('renderMarkdown: unordered list', () => {
+  const out = renderMarkdown('- alpha\n- beta\n* gamma');
+  assert.match(out, /<ul>/);
+  assert.match(out, /<li>alpha<\/li>/);
+  assert.match(out, /<li>beta<\/li>/);
+  assert.match(out, /<li>gamma<\/li>/);
+});
+
+test('renderMarkdown: ordered list', () => {
+  const out = renderMarkdown('1. first\n2. second');
+  assert.match(out, /<ol>/);
+  assert.match(out, /<li>first<\/li>/);
+  assert.match(out, /<li>second<\/li>/);
+});
+
+test('renderMarkdown: paragraph', () => {
+  const out = renderMarkdown('Hello world\n\nAnother para');
+  assert.match(out, /<p>Hello world<\/p>/);
+  assert.match(out, /<p>Another para<\/p>/);
+});
+
+test('renderMarkdown: link', () => {
+  const out = renderMarkdown('[example](https://example.com)');
+  assert.match(out, /<a href="https:\/\/example\.com">example<\/a>/);
+});
+
+test('renderMarkdown: image parsed before link', () => {
+  const out = renderMarkdown('![alt text](https://example.com/img.png)');
+  assert.match(out, /img src="https:\/\/example\.com\/img\.png"/);
+  assert.match(out, /alt="alt text"/);
+  assert.ok(!out.includes('<a '), 'image must not be misidentified as a link');
+});
+
+test('renderMarkdown: inline code', () => {
+  const out = renderMarkdown('Use `console.log` to debug');
+  assert.match(out, /<code>console\.log<\/code>/);
+});
+
+test('renderMarkdown: fenced code block', () => {
+  const out = renderMarkdown('```\nconst x = 1;\n```');
+  assert.match(out, /<pre><code>const x = 1;<\/code><\/pre>/);
+});
+
+test('renderMarkdown: HTML-escape & < > in text', () => {
+  const out = renderMarkdown('a < b & c > d');
+  assert.match(out, /a &lt; b &amp; c &gt; d/);
+  assert.ok(!out.match(/<b[^>]?>/), 'raw HTML must not appear');
+});
+
+test('renderMarkdown: unsupported construct (table) degrades to plain text', () => {
+  const out = renderMarkdown('| col1 | col2 |\n|------|------|\n| a | b |');
+  assert.ok(typeof out === 'string', 'must return a string');
+  assert.ok(!out.includes('<table'), 'no <table> element emitted');
+  assert.match(out, /col1/, 'table text still visible');
 });

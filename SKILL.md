@@ -142,6 +142,10 @@ The poll call replaces the interim with the real answer. Only ack when there wil
 
 The light turns amber the moment poll delivers feedback, and green again as soon as you re-poll. Keep that gap short. If amber persists for more than ~2 minutes with no file edits or replies, the server assumes you stopped and turns the light grey automatically.
 
+## Supported file types
+
+Loupe handles both `.html` and `.md` / `.markdown` files. For a Markdown file, loupe renders it to HTML on each request and injects the annotation SDK. Everything (markers, threads, replies, reload) works the same way. When the agent edits a `.md` file on feedback, it edits the Markdown SOURCE, not the rendered HTML.
+
 ## Notes
 
 - `open` and `poll` both work by hashing the absolute file path to find the session. Use the same path consistently.
