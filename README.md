@@ -9,28 +9,21 @@ Interactive HTML feedback loop for Claude Code agents. The agent opens an HTML f
 3. The agent is blocked on `node dist/cli.js poll <file>`. When you send, the poll returns JSON with your annotations.
 4. The agent edits the HTML, saves it, the browser reloads automatically, and the loop continues.
 
-## Install
+## Installation
 
-**Recommended (marketplace):**
+1. `/plugin marketplace add codewithagents/loupe`
+2. `/plugin install loupe@codewithagents`
+3. If prompted, run `/reload-plugins` to activate.
 
-```
-/plugin marketplace add codewithagents/loupe
-/plugin install loupe@codewithagents
-```
+The skill is invoked as `/loupe:loupe`. Requires Node.js 18+ and has zero runtime dependencies.
 
-**Local development:**
+## Development
 
-Option A: point Claude Code at the repo directly:
+For local development, launch Claude Code pointed at the repo directly:
+
 ```bash
-claude --plugin-dir path/to/loupe
+claude --plugin-dir ./
 ```
-
-Option B: symlink into your skills directory:
-```bash
-bash install.sh
-```
-
-`install.sh` creates a symlink at `~/.claude/skills/loupe` so Claude Code picks it up as a skill.
 
 ## Manual usage (two terminals)
 
