@@ -15,6 +15,39 @@ type MarkerState = 'done' | 'agent-last' | 'interim' | 'queued' | 'user-last' | 
 let markers: Record<string, { el: HTMLButtonElement; selector: string | null; state: MarkerState }> = {};
 let presenceWorking = false;
 
+// Draft persistence: survives the artifact iframe being torn down and reloaded
+// (the shell reloads the artifact whenever the underlying file changes on disk).
+// sessionStorage is scoped to the tab + origin, not to a specific document instance,
+// so it survives `artifactFrame.src = ...` reassignment as long as the iframe stays
+// same-origin with the shell, which it is here (both served by the loupe server).
+const DRAFT_KEY = 'loupe:compose-draft:' + key;
+const TEXTAREA_MIN_HEIGHT = 56;
+const TEXTAREA_MAX_HEIGHT = 200;
+
+interface PersistedDraft {
+  selector: string;
+  contentSnippet: string;
+  text: string;
+  selectionStart: number;
+  selectionEnd: number;
+  focused: boolean;
+}
+
+interface ComposeRestoreOptions {
+  text: string;
+  selectionStart: number;
+  selectionEnd: number;
+  focus: boolean;
+}
+
+// Set while a compose box is open, to flush its latest state to sessionStorage
+// on pagehide (fired just before the iframe document is torn down on reload).
+let persistCurrentDraft: (() => void) | null = null;
+
+function clearPersistedDraft(): void {
+  try { sessionStorage.removeItem(DRAFT_KEY); } catch (_e) {}
+}
+
 // Inject pulse keyframe once at module load.
 const _pulseStyle = document.createElement('style');
 _pulseStyle.textContent = '@keyframes loupe-pulse{0%,100%{box-shadow:0 2px 6px rgba(0,0,0,0.35),0 0 0 0 rgba(245,158,11,0.55)}50%{box-shadow:0 2px 6px rgba(0,0,0,0.35),0 0 0 5px rgba(245,158,11,0)}} .loupe-awaiting-pulse{animation:loupe-pulse 1.4s ease-in-out infinite;}';
@@ -174,22 +207,42 @@ function showSelOv(el: Element): void {
 }
 
 /* ---- inline compose ---- */
-function openCompose(el: Element, selector: string): void {
-  if (composeBox) { composeBox.remove(); composeBox = null; }
-  const contentSnippet = getContentSnippet(el);
 
+// Keeps the compose box anchored under (or above, if it would overflow) its target
+// element. Reads the box's actual rendered height instead of a fixed guess, since the
+// textarea auto-grows as the user types; without that the box could grow past the
+// bottom of the viewport once the flip decision was made against a stale height.
+function positionComposeBox(el: Element, box: HTMLDivElement): void {
   const r = el.getBoundingClientRect();
-  const mg = 8, bw = 240, bh = 118;
+  const mg = 8, bw = 240;
+  const bh = box.offsetHeight || 118;
   let left = r.left;
   let top = r.bottom + mg;
   if (left + bw > window.innerWidth - mg) left = window.innerWidth - bw - mg;
   if (left < mg) left = mg;
   if (top + bh > window.innerHeight - mg) top = r.top - bh - mg;
   if (top < mg) top = mg;
+  box.style.left = `${left}px`;
+  box.style.top = `${top}px`;
+}
+
+// Grows the textarea with its content up to a max height, then lets it scroll
+// internally (harmless now that the window scroll listener no longer closes the
+// compose box on incidental scrolls originating inside loupe's own UI).
+function autoGrowTextarea(ta: HTMLTextAreaElement): void {
+  ta.style.height = `${TEXTAREA_MIN_HEIGHT}px`;
+  const next = Math.max(Math.min(ta.scrollHeight, TEXTAREA_MAX_HEIGHT), TEXTAREA_MIN_HEIGHT);
+  ta.style.height = `${next}px`;
+  ta.style.overflowY = ta.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+}
+
+function openCompose(el: Element, selector: string, restore?: ComposeRestoreOptions): void {
+  if (composeBox) { composeBox.remove(); composeBox = null; }
+  const contentSnippet = getContentSnippet(el);
 
   const box = document.createElement('div');
   box.setAttribute('data-loupe-compose', '1');
-  box.style.cssText = `position:fixed;z-index:2147483001;background:#1e293b;border:1.5px solid #3b82f6;border-radius:8px;padding:8px;width:240px;box-shadow:0 4px 20px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:5px;left:${left}px;top:${top}px;`;
+  box.style.cssText = 'position:fixed;z-index:2147483001;background:#1e293b;border:1.5px solid #3b82f6;border-radius:8px;padding:8px;width:240px;box-shadow:0 4px 20px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:5px;left:-9999px;top:-9999px;';
 
   const lbl = document.createElement('div');
   lbl.style.cssText = 'font-size:10px;color:#94a3b8;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
@@ -197,7 +250,7 @@ function openCompose(el: Element, selector: string): void {
   box.appendChild(lbl);
 
   const ta = document.createElement('textarea');
-  ta.style.cssText = 'background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:6px;font-size:12px;resize:none;height:56px;outline:none;font-family:system-ui,sans-serif;width:100%;box-sizing:border-box;line-height:1.4;';
+  ta.style.cssText = `background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:6px;font-size:12px;resize:none;height:${TEXTAREA_MIN_HEIGHT}px;overflow-y:hidden;outline:none;font-family:system-ui,sans-serif;width:100%;box-sizing:border-box;line-height:1.4;`;
   ta.placeholder = 'Type note, Enter to add...';
   box.appendChild(ta);
 
@@ -205,6 +258,29 @@ function openCompose(el: Element, selector: string): void {
   hint.style.cssText = 'font-size:10px;color:#475569;line-height:1.3;';
   hint.textContent = 'Enter: add  Shift+Enter: newline  Cmd+Enter: add & send all  Esc: cancel';
   box.appendChild(hint);
+
+  function persistDraft(): void {
+    try {
+      const draft: PersistedDraft = {
+        selector,
+        contentSnippet,
+        text: ta.value,
+        selectionStart: ta.selectionStart,
+        selectionEnd: ta.selectionEnd,
+        focused: document.activeElement === ta,
+      };
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch (_e) {}
+  }
+
+  ta.addEventListener('input', () => {
+    autoGrowTextarea(ta);
+    positionComposeBox(el, box);
+    persistDraft();
+  });
+  ta.addEventListener('keyup', persistDraft);
+  ta.addEventListener('click', persistDraft);
+  ta.addEventListener('blur', persistDraft);
 
   ta.addEventListener('keydown', (e: KeyboardEvent) => {
     e.stopPropagation();
@@ -229,13 +305,27 @@ function openCompose(el: Element, selector: string): void {
 
   document.body.appendChild(box);
   composeBox = box;
-  ta.focus();
+  persistCurrentDraft = persistDraft;
+
+  if (restore) {
+    ta.value = restore.text;
+    autoGrowTextarea(ta);
+    const len = ta.value.length;
+    try { ta.setSelectionRange(Math.min(restore.selectionStart, len), Math.min(restore.selectionEnd, len)); } catch (_e) {}
+    if (restore.focus) ta.focus();
+  } else {
+    ta.focus();
+  }
+  positionComposeBox(el, box);
+  persistDraft();
 }
 
 function closeCompose(): void {
   if (composeBox) { composeBox.remove(); composeBox = null; }
   if (selOv) selOv.style.display = 'none';
   selectedEl = null;
+  persistCurrentDraft = null;
+  clearPersistedDraft();
 }
 
 /* ---- rAF tick ---- */
@@ -245,6 +335,9 @@ function tick(): void {
   }
   if (selectedEl && selOv && selOv.style.display !== 'none') {
     placeOv(selOv, selectedEl);
+  }
+  if (composeBox && selectedEl) {
+    positionComposeBox(selectedEl, composeBox);
   }
   requestAnimationFrame(tick);
 }
@@ -276,8 +369,52 @@ function checkAnchor(threadId: string, selector: string | null, contentSnippet: 
   return { threadId, selector: null, orphaned: true };
 }
 
+/* ---- draft restoration across iframe reloads ---- */
+// Reopens an in-progress compose box after the shell reloads the artifact iframe
+// (e.g. the agent just edited the file on disk). Reuses checkAnchor, the same
+// stale-selector-to-element machinery used for orphan detection elsewhere, so a
+// draft survives even if the reload changed the DOM enough to shift the selector.
+function restoreDraftOnLoad(): void {
+  let raw: string | null = null;
+  try { raw = sessionStorage.getItem(DRAFT_KEY); } catch (_e) { return; }
+  if (!raw) return;
+
+  let draft: PersistedDraft;
+  try { draft = JSON.parse(raw) as PersistedDraft; } catch (_e) { clearPersistedDraft(); return; }
+
+  const anchor = checkAnchor('__draft__', draft.selector || null, draft.contentSnippet || null);
+  if (anchor.orphaned || !anchor.selector) { clearPersistedDraft(); return; }
+
+  const target = document.querySelector(anchor.selector);
+  if (!target) { clearPersistedDraft(); return; }
+
+  selectedEl = target;
+  showSelOv(target);
+  openCompose(target, anchor.selector, {
+    text: draft.text,
+    selectionStart: draft.selectionStart,
+    selectionEnd: draft.selectionEnd,
+    focus: draft.focused,
+  });
+}
+restoreDraftOnLoad();
+
+// Final flush before the iframe document is torn down, e.g. by the shell reloading
+// the artifact after the agent edits the file on disk. Covers any state change that
+// happened after the last keyup/click/blur persist (rare, but cheap to cover).
+window.addEventListener('pagehide', () => { persistCurrentDraft?.(); });
+
 /* ---- postMessage from parent shell ---- */
-window.addEventListener('scroll', () => { if (composeBox) closeCompose(); }, true);
+// Scroll events do not bubble, but this listener is capture-phase on window, so it
+// still fires for scrolls inside descendants, including the compose textarea's own
+// internal overflow scrolling once a note grows past its visible height. Ignore those
+// entirely. A real page scroll no longer closes the compose box either: it stays
+// anchored to its target element every frame via tick(), closing on scroll just to
+// lose the user's draft is itself the bug we're fixing.
+window.addEventListener('scroll', (e: Event) => {
+  if (isLoupeEl(e.target)) return;
+  if (composeBox && selectedEl) positionComposeBox(selectedEl, composeBox);
+}, true);
 
 window.addEventListener('message', (e: MessageEvent) => {
   if (!e.data || typeof e.data !== 'object') return;
