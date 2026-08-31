@@ -44,6 +44,12 @@ interface ComposeRestoreOptions {
 // on pagehide (fired just before the iframe document is torn down on reload).
 let persistCurrentDraft: (() => void) | null = null;
 
+// Cancels the currently open box's pending "focus was lost" flip (see the blur
+// handler in openCompose). pagehide calls this before persisting, so a blur that
+// only happened because the iframe document is mid-teardown never gets a chance
+// to record "not focused" before we capture the final draft state.
+let cancelPendingFocusFlip: (() => void) | null = null;
+
 function clearPersistedDraft(): void {
   try { sessionStorage.removeItem(DRAFT_KEY); } catch (_e) {}
 }
@@ -238,6 +244,7 @@ function autoGrowTextarea(ta: HTMLTextAreaElement): void {
 
 function openCompose(el: Element, selector: string, restore?: ComposeRestoreOptions): void {
   if (composeBox) { composeBox.remove(); composeBox = null; }
+  cancelPendingFocusFlip?.();
   const contentSnippet = getContentSnippet(el);
 
   const box = document.createElement('div');
@@ -259,6 +266,19 @@ function openCompose(el: Element, selector: string, restore?: ComposeRestoreOpti
   hint.textContent = 'Enter: add  Shift+Enter: newline  Cmd+Enter: add & send all  Esc: cancel';
   box.appendChild(hint);
 
+  // Whether the textarea is focused, tracked explicitly instead of read from
+  // document.activeElement at persist time. By the time any blur handler (or the
+  // pagehide handler below) runs, activeElement has already moved on to whatever
+  // took focus (or to document.body), so reading it there would always report
+  // "not focused", even when the blur is really just an artifact of the iframe
+  // document being torn down for reload rather than a deliberate focus change.
+  let isFocused = restore ? restore.focus : true;
+  let focusFlipTimer: number | null = null;
+
+  function cancelFocusFlip(): void {
+    if (focusFlipTimer !== null) { window.clearTimeout(focusFlipTimer); focusFlipTimer = null; }
+  }
+
   function persistDraft(): void {
     try {
       const draft: PersistedDraft = {
@@ -267,7 +287,7 @@ function openCompose(el: Element, selector: string, restore?: ComposeRestoreOpti
         text: ta.value,
         selectionStart: ta.selectionStart,
         selectionEnd: ta.selectionEnd,
-        focused: document.activeElement === ta,
+        focused: isFocused,
       };
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     } catch (_e) {}
@@ -280,7 +300,26 @@ function openCompose(el: Element, selector: string, restore?: ComposeRestoreOpti
   });
   ta.addEventListener('keyup', persistDraft);
   ta.addEventListener('click', persistDraft);
-  ta.addEventListener('blur', persistDraft);
+  ta.addEventListener('focus', () => {
+    cancelFocusFlip();
+    isFocused = true;
+    persistDraft();
+  });
+  ta.addEventListener('blur', () => {
+    // Defer the flip to false by one macrotask rather than applying it immediately.
+    // A genuine blur (e.g. focus moving to the parent shell's own sidebar input) has
+    // nothing racing it, so the flip lands a moment later as normal. A blur that is
+    // just a side effect of this document unloading for reload is followed by
+    // pagehide first, which cancels this timer, so isFocused (and the persisted
+    // draft) still says "focused" when we come back. Ambiguous cases resolve in
+    // favor of restoring focus, since losing it silently is the worse outcome.
+    cancelFocusFlip();
+    focusFlipTimer = window.setTimeout(() => {
+      focusFlipTimer = null;
+      isFocused = false;
+      persistDraft();
+    }, 0);
+  });
 
   ta.addEventListener('keydown', (e: KeyboardEvent) => {
     e.stopPropagation();
@@ -306,17 +345,26 @@ function openCompose(el: Element, selector: string, restore?: ComposeRestoreOpti
   document.body.appendChild(box);
   composeBox = box;
   persistCurrentDraft = persistDraft;
+  cancelPendingFocusFlip = cancelFocusFlip;
 
+  // Settle the height first (it affects the top/bottom flip math), then place the
+  // box at its final position, and only then focus anything. Focusing an element
+  // still parked at its off-screen placeholder position risks the browser trying to
+  // scroll it into view, which would visibly jump the page (and, on restore, fire a
+  // spurious scroll event during init).
   if (restore) {
     ta.value = restore.text;
     autoGrowTextarea(ta);
+  }
+  positionComposeBox(el, box);
+
+  if (restore) {
     const len = ta.value.length;
     try { ta.setSelectionRange(Math.min(restore.selectionStart, len), Math.min(restore.selectionEnd, len)); } catch (_e) {}
     if (restore.focus) ta.focus();
   } else {
     ta.focus();
   }
-  positionComposeBox(el, box);
   persistDraft();
 }
 
@@ -324,6 +372,8 @@ function closeCompose(): void {
   if (composeBox) { composeBox.remove(); composeBox = null; }
   if (selOv) selOv.style.display = 'none';
   selectedEl = null;
+  cancelPendingFocusFlip?.();
+  cancelPendingFocusFlip = null;
   persistCurrentDraft = null;
   clearPersistedDraft();
 }
@@ -400,9 +450,13 @@ function restoreDraftOnLoad(): void {
 restoreDraftOnLoad();
 
 // Final flush before the iframe document is torn down, e.g. by the shell reloading
-// the artifact after the agent edits the file on disk. Covers any state change that
-// happened after the last keyup/click/blur persist (rare, but cheap to cover).
-window.addEventListener('pagehide', () => { persistCurrentDraft?.(); });
+// the artifact after the agent edits the file on disk. Cancel any pending "focus was
+// lost" flip first, so a blur that only fired as a side effect of this same teardown
+// does not get to record "not focused" before we capture the final draft state.
+window.addEventListener('pagehide', () => {
+  cancelPendingFocusFlip?.();
+  persistCurrentDraft?.();
+});
 
 /* ---- postMessage from parent shell ---- */
 // Scroll events do not bubble, but this listener is capture-phase on window, so it
