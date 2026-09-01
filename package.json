@@ -1,6 +1,6 @@
 {
   "name": "@codewithagents/loupe",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "type": "module",
   "description": "Interactive HTML feedback loop for Claude Code agents",
   "main": "dist/cli.js",

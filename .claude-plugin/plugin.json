@@ -1,7 +1,7 @@
 {
   "name": "loupe",
   "description": "Interactive HTML artifact review loop for local coding agents. Opens agent-generated HTML in the browser with an annotation layer; the user clicks elements, selects text, and sends targeted feedback that returns to the agent as JSON.",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "author": {
     "name": "CodeWithAgents",
     "url": "https://github.com/codewithagents"
