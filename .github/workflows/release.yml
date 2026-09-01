@@ -1,0 +1,26 @@
+# This repo ships as a Claude Code plugin, distributed via the GitHub repo
+# itself (see .claude-plugin/), not published to npm. release-please's job
+# here is only to open the release PR, then on merge create the git tag,
+# the GitHub Release, and the changelog. There is no publish step, unlike
+# the sibling openapi-zod-ts monorepo's release workflow.
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # create tags and releases
+  issues: write # release-please's documented basic configuration requires this
+  pull-requests: write # create and update release PRs
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

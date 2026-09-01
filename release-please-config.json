@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "bfbd3e9223b5500eb79de9fbda9c5d7a20e64666",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "component": "loupe",
+      "tag-separator": "--",
+      "extra-files": [
+        { "type": "json", "path": ".claude-plugin/plugin.json", "jsonpath": "$.version" }
+      ]
+    }
+  }
+}

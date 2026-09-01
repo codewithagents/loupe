@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+
+# Minimal permissions: the workflow only checks out code and runs local scripts.
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -10,13 +16,39 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [18, 20]
+        node: [22, 24, 26]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm install
+          cache: npm
+      - run: npm ci
       - run: npm run typecheck
       - run: npm run build
-      - run: node --test
+      - run: npm test
+
+  # dist/ is committed on purpose (see .gitattributes), which also hides it from
+  # PR diffs. That makes stale compiled output easy to miss, so enforce the
+  # invariant here instead: a clean rebuild of src/ must produce byte-identical
+  # dist/ output. Runs on a single Node version only, there is nothing to gain
+  # from comparing build output across the matrix.
+  dist-drift:
+    name: Verify dist/ matches a fresh build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Fail if dist/ is stale
+        run: |
+          if git diff --exit-code -- dist/; then
+            echo "dist/ matches a fresh build of src/."
+          else
+            echo "::error::dist/ does not match a fresh build of src/. Run 'npm run build' locally and commit the updated dist/ output."
+            exit 1
+          fi

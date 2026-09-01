@@ -15,7 +15,7 @@ Interactive HTML feedback loop for Claude Code agents. The agent opens an HTML f
 2. `/plugin install loupe@codewithagents`
 3. If prompted, run `/reload-plugins` to activate.
 
-The skill is invoked as `/loupe:loupe`. Requires Node.js 18+ and has zero runtime dependencies.
+The skill is invoked as `/loupe:loupe`. Requires Node.js 22+ and has zero runtime dependencies.
 
 ## Development
 
@@ -51,7 +51,7 @@ node dist/cli.js poll /path/to/your/file.html --reply "I've updated the layout."
 
 ## Requirements
 
-- Node.js 18 or newer.
+- Node.js 22 or newer.
 - Zero runtime npm dependencies.
 
 ## License
