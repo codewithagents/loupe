@@ -1,0 +1,12 @@
+# Normalize line endings for this cross-platform CLI.
+* text=auto eol=lf
+
+# dist/ is compiled output, committed on purpose: this is a Claude Code plugin
+# distributed as a GitHub repo, and plugin installs fetch repo contents with no
+# build step. If dist/ is not committed, every install breaks. Do not gitignore it.
+#
+# It is still generated code, not something a human edits by hand, so mark it as
+# such: GitHub collapses it in PR diffs and excludes it from language stats, and
+# -diff keeps it out of local `git diff` output too. CI still enforces that dist/
+# matches a fresh build of src/, see .github/workflows/ci.yml.
+dist/** linguist-generated=true -diff
